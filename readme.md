@@ -19,6 +19,10 @@ Genes of parents are combined randomly.
 sudo pip3 install -e .
 ```
 
+```python
+from treibhaus import Treibhaus
+```
+
 ## Example
 
 Small chunk of example.py:
@@ -38,3 +42,5 @@ results = Treibhaus(modelGenerator, Model.fitness,
 ```
 
 ![Rastrigin fitness over time](./example.png)
+
+Very easy optimization problem of finding the global minima of a 3-dimensional Rastrigin function
