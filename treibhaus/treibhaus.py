@@ -319,24 +319,36 @@ class Treibhaus():
                         # I make the assumption here, that two bad parents won't result into a good child
                         # hence, I mutate it a lot. Basically this sprays random models into the space again
                         # worst parents possible? a should be 1
-                        # best parents possible? a should be 0
+                        # best parents possible? a should be close to 0 (but not zero, because 1/0 otherwise)
                         a = ((population - (max(iP1, iP2))) / population)**self.explorationrate[iParam]
-                        # int:
+                        
+                        # the beta distribution works for chosing random
+                        # values between two constraints with a high
+                        # probability around the current value
+                        # 10000 is a figured out value by trial and error
+                        sharpness = 1/a # the higher the sharper. the lower a, the higher.
+
+                        # the current position is also the mean of the distribution
+                        # between 0 and 1
+                        position = (param-lower)/(upper-lower)
                         if paramsTypes[iParam] == int:
-                            param += round(randint(paramsLower[iParam], paramsUpper[iParam]) * a)
-                        # float:
-                        if paramsTypes[iParam] == float:
-                            # the beta distribution works for chosing random
-                            # values between two constraints with a high
-                            # probability around the current value
-                            # 10000 is a figured out value by trial and error
-                            sharpness = 1/a # the higher the sharper. the lower a, the higher.
-                            position = (param-lower)/(upper-lower)
-                            alpha = (position) * sharpness
-                            beta = (1-position) * sharpness
-                            sample = np.random.beta(alpha, beta)
-                            # translate that sample between 0 and 1 to one between lower and upper
-                            param = sample * (upper-lower) + lower
+                            # to avoid alpha or beta being 0 because of previous
+                            # rounding, manipulate the position by decreasing "lower"
+                            # and increasing "upper" while not changing the range from
+                            # which the parameter is allowed to be
+                            position = (param-lower+1)/(upper-lower+2)
+
+                        # parameters of the beta distribution and taking a sample
+                        alpha = (position) * sharpness
+                        beta = (1-position) * sharpness
+                        sample = np.random.beta(alpha, beta)
+
+                        # translate that sample between 0 and 1 to one between lower and upper
+                        param = sample * (upper-lower) + lower
+
+                        # if int is desired, round to remove the comma
+                        if paramsTypes[iParam] == int:
+                            param = round(param)
 
                         # make sure it is within range
                         childParams[iParam] = max(lower, min(upper, param))
