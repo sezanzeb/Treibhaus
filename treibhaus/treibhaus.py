@@ -14,7 +14,7 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 class Treibhaus():
     def __init__(self, modelGenerator, fitnessEvaluator, population, generations,
                  paramsLower, paramsUpper, paramsTypes=None,
-                 randomSeed=None, newIndividuals=0.1, explorationrate=2, workers=1):
+                 randomSeed=None, newIndividuals=0.1, explorationrate=5, workers=1):
         """
         Finds the best model using genetic algorithms.
 
@@ -320,27 +320,23 @@ class Treibhaus():
                         # hence, I mutate it a lot. Basically this sprays random models into the space again
                         # worst parents possible? a should be 1
                         # best parents possible? a should be 0
-                        # => much more exploration without hurting (possibly) good models too much
-                        # it indeed works. Probably would work better if the true model quality was used instead of max(iP1, iP2),
-                        # but for that all models would have to be tested AGAIN
-                        a = ((population - (max(iP1, iP2) + 1)) / population)**self.explorationrate[iParam]
+                        a = ((population - (max(iP1, iP2))) / population)**self.explorationrate[iParam]
                         # int:
                         if paramsTypes[iParam] == int:
-                            childParams[iParam] += round(randint(paramsLower[iParam], paramsUpper[iParam]) * a)
+                            param += round(randint(paramsLower[iParam], paramsUpper[iParam]) * a)
                         # float:
                         if paramsTypes[iParam] == float:
                             # the beta distribution works for chosing random
                             # values between two constraints with a high
                             # probability around the current value
                             # 10000 is a figured out value by trial and error
-                            sharpness = (a+1)*self.explorationrate[iParam]*10000
+                            sharpness = 1/a # the higher the sharper. the lower a, the higher.
                             position = (param-lower)/(upper-lower)
                             alpha = (position) * sharpness
                             beta = (1-position) * sharpness
                             sample = np.random.beta(alpha, beta)
                             # translate that sample between 0 and 1 to one between lower and upper
                             param = sample * (upper-lower) + lower
-                            childParams[iParam] = param
 
                         # make sure it is within range
                         childParams[iParam] = max(lower, min(upper, param))
