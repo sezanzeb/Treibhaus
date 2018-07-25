@@ -8,10 +8,6 @@ from random import choices
 from random import seed
 from multiprocessing import Process, Queue
 
-# Based on the assumption that models take long to train and to evaluate,
-# multiprocessing is used instead of a pool
-from multiprocessing import Process
-
 __author__ = "Tobias B <proxima@hip70890b.de>"
 
 class Treibhaus():
@@ -175,7 +171,7 @@ class Treibhaus():
         an initial population/generation
         
         returns a list like [[param1, param2, ...], ...]
-        with shape (population, parameters)
+        with shape (population*2, parameters)
         """
 
         population = self.population
