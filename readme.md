@@ -27,7 +27,7 @@ from treibhaus import Treibhaus
 
 ## Example
 
-Small chunk of example.py:
+Small chunk of https://github.com/sezanzeb/Treibhaus/blob/master/example.py. Model.fitness is a function, that returns a high value for good models and receives the model as parameter.
 
 ```python
 def modelGenerator(params):
