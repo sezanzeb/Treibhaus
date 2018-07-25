@@ -45,4 +45,4 @@ results = Treibhaus(modelGenerator, Model.fitness,
 
 ![Rastrigin fitness over time](./example.png)
 
-Very easy optimization problem of finding the global minima of a 3-dimensional Rastrigin function
+Finding the global minima of a 3-dimensional Rastrigin function
