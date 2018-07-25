@@ -37,7 +37,7 @@ def modelGenerator(params):
     return model
 
 optimizer = Treibhaus(modelGenerator, Model.fitness,
-                      30, 30, # population and generations
+                      30, 10, # population and generations
                       [-10.0, -10.0, -10.0], # lower
                       [ 10.0,  10.0,  10.0], # upper
                       [float, float, float], # types
@@ -46,4 +46,6 @@ optimizer = Treibhaus(modelGenerator, Model.fitness,
 
 ![Rastrigin fitness over time](./example.png)
 
-Finding the global minima of a 3-dimensional Rastrigin function
+Finding the global minima of a 3-dimensional Rastrigin function, the closer to 0 the better. In this example, it can be very nicely seen how clustes of individuals in local minima vanish as other individuals find better minima. Notably the orange cluster that exists from 100 to 350, and the green cluster between 150 and 250.
+
+The pattern of lines from the left to right emerges, because the rastrigin function has its local minima arranged in a grid.

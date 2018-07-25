@@ -49,14 +49,30 @@ optimizer.train(5)
 
 # ----------------------------------- results -----------------------------------
 
-print("best model:", optimizer.best[0], "with a quality of:", optimizer.best[1])
+print("best model:", optimizer.getBestParameters(), "with a fitness (higher is better) of:", optimizer.getHighestFitness())
 
 # select the history, transpose it so that the fitness can be accessed
 fitnessHistory = np.array(optimizer.history).T[1]
 
-plt.figure(figsize=(15,5))
-plt.plot(fitnessHistory)
-plt.xlabel("model")
-plt.ylabel("fitness")
-plt.yscale("log")
+# [:,0] to select parameters only, not the quality.
+# np.array(a) to convert the tuple of parameters to an array
+# wrapping np.array, so that all the fancy numpy array stuff is possible afterwards
+points = np.array([np.array(a) for a in np.array(optimizer.history)[:,0]])
+
+# plotting populations over time
+plt.scatter(x=range(len(points)), y=points.T[0], s=0.5)
+plt.scatter(x=range(len(points)), y=points.T[1], s=0.5)
+plt.scatter(x=range(len(points)), y=points.T[2], s=0.5)
 plt.show()
+
+# plotting all the positions the population has been in in 2D
+# plt.scatter(x=points.T[0], y=points.T[1], s=0.5)
+# plt.scatter(x=points.T[0], y=points.T[2], s=0.5)
+# plt.scatter(x=points.T[1], y=points.T[2], s=0.5)
+# plt.show()
+
+# plt.scatter(x=range(len(fitnessHistory)), y=fitnessHistory, s=0.5)
+# plt.xlabel("model")
+# plt.ylabel("fitness")
+# plt.yscale("log")
+# plt.show()

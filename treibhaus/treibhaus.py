@@ -13,7 +13,7 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 class Treibhaus():
     def __init__(self, modelGenerator, fitnessEvaluator, population, generations,
                  paramsLower, paramsUpper, paramsTypes=None,
-                 randomSeed=None, explorationrate=4, workers=1):
+                 randomSeed=None, newIndividuals=0.1, explorationrate=2, workers=1):
         """
         Finds the best model using genetic algorithms.
 
@@ -53,12 +53,6 @@ class Treibhaus():
             the random initial model generation and the mutation need
             bounds of how much to randomize.
             [10, 10]
-        explorationrate : number
-            the lower, the more exploration, that means more severe
-            mutations will happen.
-        randomSeed : number
-            random seed. setting this to the same number each time
-            means that the results will be the same each time.
         paramsTypes : array
             determines how to mutate. ints will be in/decremented
             floats will be added with a random float
@@ -67,13 +61,32 @@ class Treibhaus():
 
             default: None. will be automatically detected from
             paramsLower and paramsUpper.
+        randomSeed : number
+            random seed. setting this to the same number each time
+            means that the results will be the same each time. Setting
+            and remembering the random seeds will give the possibility
+            to reproduce results later.
+        newIndividuals : float
+            float between 0 and 1, how much percent of the population
+            should be new random individuals in each generation. A value
+            of 1 corresponds to complete noise in each generation.
+            Default: 0.1
+        explorationrate : number
+            the lower, the more severe mutations will happen. The higher,
+            the slower they will move around in minimas. Default: 2
+        workers : number
+            How many processes will be spawned to train models in parallel.
+            Default is 1, which means that the multiprocessing package will
+            not be used. Can be set to os.cpu_count() for example
+
         Raises
         ------
         ValueError
             when paramsTypes, paramsLower and paramsUpper
             don't have the same length
         ValueError
-            quick check if paramsTypes[0] actually is a type object
+            when one of the values in paramsLower and paramsUpper
+            is not of float or int
         """
 
         # has to be int or float:
@@ -104,6 +117,7 @@ class Treibhaus():
         self.modelGenerator = modelGenerator
         self.fitnessEvaluator = fitnessEvaluator
         self.explorationrate = explorationrate
+        self.newIndividuals = newIndividuals
         seed(randomSeed)
         # parameter ranges
         self.paramsUpper = paramsUpper
@@ -124,6 +138,13 @@ class Treibhaus():
         # now start
         self.train(generations)
 
+
+    def getBestParameters(self):
+        return self.best[0]
+        
+    def getHighestFitness(self):
+        return self.best[1]
+    
 
     def startProcesses(self):
         self.queueParams = Queue()
@@ -164,17 +185,16 @@ class Treibhaus():
 
 
 
-    def generateInitialParameters(self):
+    def generateInitialParameters(self, amount):
         """
         if no models from previous training are avilable,
         this function is used to initialize parameters for
         an initial population/generation
         
         returns a list like [[param1, param2, ...], ...]
-        with shape (population*2, parameters)
+        with shape (amount, nparameters)
         """
 
-        population = self.population
         paramsUpper = self.paramsUpper
         paramsLower = self.paramsLower
         paramsTypes = self.paramsTypes
@@ -185,7 +205,7 @@ class Treibhaus():
         # population*2, because later newly trained LDA Models will 
         # compared together with the models from the previous generation.
         # create initial parameters for models
-        for _ in range(population*2):
+        for _ in range(amount):
             # generate params array for the modelGenerator
             # in which initial random parameters are present
             # based on the boundaries
@@ -244,6 +264,8 @@ class Treibhaus():
         # train the generations
         for _ in range(generations):
 
+            # reset
+            paramsList = []
             # print("---")
 
             # First, determine the parameters that are going to be used to train.
@@ -251,7 +273,7 @@ class Treibhaus():
             if len(models) == 0:
                 # generate initial parameters if no models
                 # as parents available:
-                paramsList = self.generateInitialParameters()
+                paramsList = self.generateInitialParameters(population*2)
                 
                 # at first paramsList will be population*2 elements large
                 # because it initializes, so to say, random parents and children
@@ -259,13 +281,15 @@ class Treibhaus():
                 # Later, 10 parents create 10 children. population is set to 10.
                 # then they will undergo selection together.
             else:
-                for _ in range(population):
+                paramsList = self.generateInitialParameters(max(1, int(population*self.newIndividuals)))
+                while len(paramsList) < population:
 
                     # select 2 random parents
                     # this will make it very likely to select a high index
                     # which corresponds to the model with the highest fitness
-                    iP1 = choices(range(population), range(population))[0]
-                    iP2 = choices(range(population), range(population))[0]
+                    weights = [x for x in range(population)]
+                    iP1 = choices(range(population), weights)[0]
+                    iP2 = choices(range(population), weights)[0]
                     p1 = models[iP1][0]
                     p2 = models[iP2][0]
 
@@ -280,8 +304,8 @@ class Treibhaus():
                         # mutate
                         # I make the assumption here, that two bad parents won't result into a good child
                         # hence, I mutate it a lot. Basically this sprays random models into the space again
-                        # bad parents? a should be 1
-                        # good parents? a should be 0
+                        # worst parents possible? a should be 1
+                        # best parents possible? a should be 0
                         # => much more exploration without hurting (possibly) good models too much
                         # it indeed works. Probably would work better if the true model quality was used instead of max(iP1, iP2),
                         # but for that all models would have to be tested AGAIN
@@ -315,9 +339,6 @@ class Treibhaus():
                     # only added
                     models += [(childParams, fitness)]
                     self.history += [(childParams, fitness)]
-
-            # reset
-            paramsList = []
 
             # sort models by quality
             # high fitness is desired, this will sort it from lowest to highest
