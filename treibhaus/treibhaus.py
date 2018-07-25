@@ -7,6 +7,7 @@ from random import uniform
 from random import choices
 from random import seed
 from multiprocessing import Process, Queue
+import numpy as np
 
 __author__ = "Tobias B <proxima@hip70890b.de>"
 
@@ -57,7 +58,7 @@ class Treibhaus():
             determines how to mutate. ints will be in/decremented
             floats will be added with a random float
             example:
-            [float, float]
+            [float, int]
 
             default: None. will be automatically detected from
             paramsLower and paramsUpper.
@@ -74,6 +75,12 @@ class Treibhaus():
         explorationrate : number
             the lower, the more severe mutations will happen. The higher,
             the slower they will move around in minimas. Default: 2
+
+            can also be an array for rates individual
+            for parameters like [2, 1, 3]
+
+            in case of float params, this is the sharpness of the beta
+            distribution that is used to mutate.
         workers : number
             How many processes will be spawned to train models in parallel.
             Default is 1, which means that the multiprocessing package will
@@ -105,9 +112,12 @@ class Treibhaus():
                 else:
                     paramsTypes += [type(paramsLower[0])]
 
+        # create explorationrate for each param
+        if np.array([explorationrate]).shape == (1,):
+            explorationrate = [explorationrate] * len(paramsTypes)
 
         # should all be of the same length:
-        if not len(paramsLower) == len(paramsTypes) == len(paramsUpper):
+        if not len(paramsLower) == len(paramsTypes) == len(paramsUpper) == len(explorationrate):
             raise ValueError("paramsTypes, paramsLower and paramsUpper should be of the same length:",
                             len(paramsLower), len(paramsTypes), len(paramsUpper))
 
@@ -300,6 +310,10 @@ class Treibhaus():
                         # recombine
                         if randint(0,1): childParams[iParam] = p1[iParam]
                         else:            childParams[iParam] = p2[iParam]
+
+                        lower = paramsLower[iParam]
+                        upper = paramsUpper[iParam]
+                        param = childParams[iParam]
                         
                         # mutate
                         # I make the assumption here, that two bad parents won't result into a good child
@@ -309,13 +323,28 @@ class Treibhaus():
                         # => much more exploration without hurting (possibly) good models too much
                         # it indeed works. Probably would work better if the true model quality was used instead of max(iP1, iP2),
                         # but for that all models would have to be tested AGAIN
-                        a = ((population - (max(iP1, iP2) + 1)) / population)**self.explorationrate
+                        a = ((population - (max(iP1, iP2) + 1)) / population)**self.explorationrate[iParam]
                         # int:
                         if paramsTypes[iParam] == int:
                             childParams[iParam] += round(randint(paramsLower[iParam], paramsUpper[iParam]) * a)
                         # float:
                         if paramsTypes[iParam] == float:
-                            childParams[iParam] += uniform(paramsLower[iParam], paramsUpper[iParam]) * a
+                            # the beta distribution works for chosing random
+                            # values between two constraints with a high
+                            # probability around the current value
+                            # 10000 is a figured out value by trial and error
+                            sharpness = (a+1)*self.explorationrate[iParam]*10000
+                            position = (param-lower)/(upper-lower)
+                            alpha = (position) * sharpness
+                            beta = (1-position) * sharpness
+                            sample = np.random.beta(alpha, beta)
+                            # translate that sample between 0 and 1 to one between lower and upper
+                            param = sample * (upper-lower) + lower
+                            childParams[iParam] = param
+
+                        # make sure it is within range
+                        childParams[iParam] = max(lower, min(upper, param))
+
 
                     paramsList += [childParams]
 
