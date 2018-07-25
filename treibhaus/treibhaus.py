@@ -7,7 +7,6 @@ from random import uniform
 from random import choices
 from random import seed
 from multiprocessing import Process, Queue
-import time
 
 # Based on the assumption that models take long to train and to evaluate,
 # multiprocessing is used instead of a pool
@@ -79,16 +78,6 @@ class Treibhaus():
             don't have the same length
         ValueError
             quick check if paramsTypes[0] actually is a type object
-        
-        Returns TODO is a class now
-        -------
-        namedTuple
-            results.best
-            # the best model
-            
-            results.history
-            # The quality of each trained model.
-            # Tuples of (params, quality)
         """
 
         # has to be int or float:
@@ -113,44 +102,54 @@ class Treibhaus():
             raise ValueError("paramsTypes, paramsLower and paramsUpper should be of the same length:",
                             len(paramsLower), len(paramsTypes), len(paramsUpper))
 
-        seed(randomSeed)
 
+        # some basic settings
         self.population = population
-        self.generations = generations
-        self.paramsUpper = paramsUpper
-        self.paramsLower = paramsLower
-        self.paramsTypes = paramsTypes
         self.modelGenerator = modelGenerator
         self.fitnessEvaluator = fitnessEvaluator
         self.explorationrate = explorationrate
-        self.models = []
+        seed(randomSeed)
+        # parameter ranges
+        self.paramsUpper = paramsUpper
+        self.paramsLower = paramsLower
+        self.paramsTypes = paramsTypes
+
+        # multiprocessing
         self.workers = workers
+        self.queueParams = None
+        self.queueResults = None
+        self.processes = []
 
-        # initialize multiprocessing if wanted
-        if self.workers > 1:
-            self.queueParams = Queue()
-            self.queueResults = Queue()
+        # state
+        # arrays that contain tuples of (params, quality)
+        self.models = []
+        self.history = []
 
-            # initialize processes that will do stuff from the queue
-            # and start them
-            processes = []
-            try:
-                for i in range(self.workers):
-                    p = Process(target=self.worker, args=(i, self.queueParams, self.queueResults))
-                    processes += [p]
-                    p.start()
-            except Exception as e:
-                self.queueParams.close()
-                self.queueResults.close()
-                for p in processes:
-                    try: p.terminate()
-                    except: pass
-                raise OSError(e)
+        # now start
+        self.train(generations)
 
-            self.processes = processes
 
-        self.train()
+    def startProcesses(self):
+        self.queueParams = Queue()
+        self.queueResults = Queue()
 
+        # initialize processes that will do stuff from the queue
+        # and start them
+        processes = []
+        try:
+            for i in range(self.workers):
+                p = Process(target=self.worker, args=(i, self.queueParams, self.queueResults))
+                processes += [p]
+                p.start()
+        except Exception as e:
+            self.queueParams.close()
+            self.queueResults.close()
+            for p in processes:
+                try: p.terminate()
+                except: pass
+            raise OSError(e)
+
+        self.processes = processes
 
 
     def worker(self, id, queueParams, queueResults):
@@ -163,7 +162,6 @@ class Treibhaus():
         # print("worker",id,"available")
         while True:
             msg = queueParams.get()
-            # print(id, "received msg")
             # msg contains the parameters to train on
             fitness = self.fitnessEvaluator(self.modelGenerator(msg))
             queueResults.put((msg, fitness))
@@ -211,7 +209,7 @@ class Treibhaus():
 
 
 
-    def train(self):
+    def train(self, generations):
         """
         does iterations over the generations and optimizes
         the parameters in such a way, that the fitness
@@ -221,8 +219,6 @@ class Treibhaus():
         self.models and also writes down model parameters
         and qualities in self.history.
         """
-        # array that contains tuples of (params, quality)
-        history = []
 
         # some shorthand stuff
         population = self.population
@@ -232,6 +228,11 @@ class Treibhaus():
 
         # what the models should look like
         paramsList = []
+
+        # check in train, not constructor, so that train
+        # can be used later to continue training
+        if self.workers > 1 and self.queueParams is None:
+            self.startProcesses()
 
         # parents:
         models = self.models
@@ -245,9 +246,9 @@ class Treibhaus():
 
 
         # train the generations
-        for _ in range(self.generations):
+        for _ in range(generations):
 
-            # print("")
+            # print("---")
 
             # First, determine the parameters that are going to be used to train.
             # The result is paramsList, a list like [[param1, param2, ...], ...]
@@ -261,8 +262,6 @@ class Treibhaus():
 
                 # Later, 10 parents create 10 children. population is set to 10.
                 # then they will undergo selection together.
-
-                # print(len(paramsList))
             else:
                 for _ in range(population):
 
@@ -302,23 +301,24 @@ class Treibhaus():
 
             # now train, can easily be multiprocessed now
             if self.workers > 1:
-                # fill queue
+                # fill queue with the parameters that the models should train on
                 for childParams in paramsList:
                     self.queueParams.put(childParams)
                 # evaluate results
-                while len(models) < population*2:
+                for _ in range(len(paramsList)):
                     childParams, fitness = self.queueResults.get()
                     models += [(childParams, fitness)]
-                    history += [(childParams, fitness)]
+                    self.history += [(childParams, fitness)]
                     # print("model finished")
             else:
+                # otherwise, just train one after the other.
                 for childParams in paramsList:
                     fitness = self.fitnessEvaluator(self.modelGenerator(childParams))
                     # difference between models and history is, that
                     # elements will not be removed from the history,
                     # only added
                     models += [(childParams, fitness)]
-                    history += [(childParams, fitness)]
+                    self.history += [(childParams, fitness)]
 
             # reset
             paramsList = []
@@ -331,25 +331,21 @@ class Treibhaus():
             # generations form the new generation. => Performs better than just proceeding with the children.
             models = sorted(models, key=lambda modelTuple: modelTuple[1])[population:]
 
-            # bestFitness = fitnessEvaluator(models[-1][0])
-
-            # print("best model:", models[-1][1], fitnessEvaluator(models[-1][0]))
-            # print("\nworking on generation number", generation+1,"...")
-
         # genetic algorithm finished. store models in self for future training continuation
         # determine the model qualities and sort one more time:
         self.models = sorted(models, key=lambda modelTuple: modelTuple[1])
 
-        print("best model:", self.models[-1][0], self.models[-1][1])
+        # print("best model:", self.models[-1][0], self.models[-1][1])
 
         # models[-1] is the best model
         self.best = models[-1]
-        self.history = history
 
         # also end the processes and close the queue
         if self.workers > 1:
             # end processes
-            for p in self.processes:
-                p.terminate()
             self.queueParams.close()
             self.queueResults.close()
+            for p in self.processes:
+                p.terminate()
+            self.queueParams = None
+            self.queueResults = None

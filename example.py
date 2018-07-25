@@ -38,13 +38,18 @@ def modelGenerator(params):
     return model
 
 optimizer = Treibhaus(modelGenerator, Model.fitness,
-                      30, 30, # population and generations
+                      30, 10, # population and generations
                       [-10.0, -10.0, -10.0], # lower
                       [ 10.0,  10.0,  10.0], # upper
                       [float, float, float], # types
                       workers=os.cpu_count()) # multiprocessing
 
+# continue training for another 5 generations
+optimizer.train(5)
+
 # ----------------------------------- results -----------------------------------
+
+print("best model:", optimizer.best[0], "with a quality of:", optimizer.best[1])
 
 # select the history, transpose it so that the fitness can be accessed
 fitnessHistory = np.array(optimizer.history).T[1]
