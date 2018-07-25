@@ -3,6 +3,7 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 from treibhaus import Treibhaus
+import os
 
 # ----------------------------------- model -----------------------------------
 
@@ -36,16 +37,17 @@ def modelGenerator(params):
     model = Model(params[0], params[1], params[2])
     return model
 
-results = Treibhaus(modelGenerator, Model.fitness,
-                    20, 40, # population and generations
-                    [-10.0, -10.0, -10.0], # lower
-                    [ 10.0,  10.0,  10.0], # upper
-                    [float, float, float]) # types
+optimizer = Treibhaus(modelGenerator, Model.fitness,
+                      30, 30, # population and generations
+                      [-10.0, -10.0, -10.0], # lower
+                      [ 10.0,  10.0,  10.0], # upper
+                      [float, float, float], # types
+                      workers=os.cpu_count()) # multiprocessing
 
 # ----------------------------------- results -----------------------------------
 
 # select the history, transpose it so that the fitness can be accessed
-fitnessHistory = np.array(results.history).T[1]
+fitnessHistory = np.array(optimizer.history).T[1]
 
 plt.figure(figsize=(15,5))
 plt.plot(fitnessHistory)

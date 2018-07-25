@@ -13,6 +13,8 @@ those of worse performing mutate more.
 
 Genes of parents are combined randomly.
 
+Can train and evaluate models on multiple cores.
+
 ## Installation
 
 ```bash
