@@ -18,6 +18,8 @@ Can train and evaluate models on multiple cores.
 ## Installation
 
 ```bash
+git clone https://github.com/sezanzeb/Treibhaus.git
+cd Treibhaus
 sudo pip3 install -e .
 ```
 
@@ -27,7 +29,7 @@ from treibhaus import Treibhaus
 
 ## Example
 
-Small chunk of example.py:
+Small chunk of https://github.com/sezanzeb/Treibhaus/blob/master/example.py. Model.fitness is a function, that returns a high value for good models and receives the model as parameter.
 
 ```python
 def modelGenerator(params):
@@ -46,6 +48,6 @@ optimizer = Treibhaus(modelGenerator, Model.fitness,
 
 ![Rastrigin fitness over time](./example.png)
 
-Finding the global minima of a 3-dimensional Rastrigin function, the closer to 0 the better. In this example, it can be very nicely seen how clustes of individuals in local minima vanish as other individuals find better minima. Notably the orange cluster that exists from 100 to 350, and the green cluster between 150 and 250.
+Finding the global minima of a 3-dimensional Rastrigin function, the closer to 0 the better. In this example, it can be very nicely seen, how some parameters gather in local minima and vanish, as other individuals find better minima for that parameter. Notably the orange cluster that exists from 100 to 350, and the green cluster between 150 and 250.
 
 The pattern of lines from the left to right emerges, because the rastrigin function has its local minima arranged in a grid.
