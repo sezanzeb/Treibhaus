@@ -18,6 +18,8 @@ Can train and evaluate models on multiple cores.
 ## Installation
 
 ```bash
+git clone https://github.com/sezanzeb/Treibhaus.git
+cd Treibhaus
 sudo pip3 install -e .
 ```
 
