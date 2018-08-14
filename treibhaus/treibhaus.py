@@ -8,13 +8,15 @@ from random import choices
 from random import seed
 from multiprocessing import Process, Queue
 import numpy as np
+import sys
 
 __author__ = "Tobias B <proxima@hip70890b.de>"
 
 class Treibhaus():
     def __init__(self, modelGenerator, fitnessEvaluator, population, generations,
-                 paramsLower, paramsUpper, paramsTypes=None,
-                 randomSeed=None, newIndividuals=0.1, explorationrate=5, workers=1):
+                 paramsLower, paramsUpper, paramsTypes=None, randomSeed=None,
+                 newIndividuals=0, explorationrate=10000, keepParents=0.1,
+                 dynamicExploration=1.1, workers=1):
         """
         Finds the best model using genetic algorithms.
 
@@ -49,11 +51,22 @@ class Treibhaus():
         paramsLower : array
             the random initial model generation and the mutation need
             bounds of how much to randomize. This is the upper bound.
-            [-10, -10]
+            [-10, -10]. It randomizes excluding those numbers, so
+            it will never be randomized to -10.
+            
+            TODO add -inf as possibility, which will cause a gamma or
+            gauss (? maybe something for which the parameters work similar to beta and gamma would be better,
+            or translate alpha and beta to mean and variance. or whatever make a function that handles that
+            given position and explorationrate. explorationrate has to be the variance in case of gauss. yes that's
+            the solution that gives the user the most control. and position is just used as the mean)
+            distribution to be used instead of beta, depending on
+            upper being inf
+
         paramsUpper : array
             the random initial model generation and the mutation need
             bounds of how much to randomize.
-            [10, 10]
+            [10, 10]. It randomizes excluding those numbers, so
+            it will never be randomized to 10.
         paramsTypes : array
             determines how to mutate. ints will be in/decremented
             floats will be added with a random float
@@ -71,21 +84,33 @@ class Treibhaus():
             float between 0 and 1, how much percent of the population
             should be new random individuals in each generation. A value
             of 1 corresponds to complete noise in each generation.
-            Default: 0.1
+            Default: 0
         explorationrate : number
             the lower, the more severe mutations will happen. The higher,
-            the slower they will move around in minimas. Default: 2
+            the slower they will move around in minimas. Default: 5
 
             can also be an array for rates individual
-            for parameters like [2, 1, 3]
+            for parameters. explorationrate = [2000, 1100, 50000]
 
-            in case of float params, this is the sharpness of the beta
-            distribution that is used to mutate.
+            > 0
+
+            this is the sharpness of the distribution that is
+            used to mutate. parameters of the distribution add up
+            to explorationrate
+        keepParents : float
+            how many of the best parents to take into the next generation.
+            float between 0 and 1
+
+            TODO when negative, remove that many bad performing parents
+            before making children
+        dynamicExploration : float
+            will make more exploration when no better performing
+            individuals were found in a generation. Default: 1.1
+            Set to 1 for no dynamicExploration
         workers : number
             How many processes will be spawned to train models in parallel.
             Default is 1, which means that the multiprocessing package will
             not be used. Can be set to os.cpu_count() for example
-
         Raises
         ------
         ValueError
@@ -116,6 +141,10 @@ class Treibhaus():
         if np.array([explorationrate]).shape == (1,):
             explorationrate = [explorationrate] * len(paramsTypes)
 
+        # otherwise only noise will be produced
+        for rate in explorationrate:
+            assert rate > 0
+
         # should all be of the same length:
         if not len(paramsLower) == len(paramsTypes) == len(paramsUpper) == len(explorationrate):
             raise ValueError("paramsTypes, paramsLower and paramsUpper should be of the same length:",
@@ -126,9 +155,13 @@ class Treibhaus():
         self.population = population
         self.modelGenerator = modelGenerator
         self.fitnessEvaluator = fitnessEvaluator
-        self.explorationrate = explorationrate
         self.newIndividuals = newIndividuals
-        seed(randomSeed)
+        self.dynamicExploration = dynamicExploration
+        # exploration is dynamic, explorationrate can change but will be reset sometimes
+        self.explorationrate = explorationrate
+        # percent to number of parents that are taken into the next generation
+        # always keep the very best one
+        self.keepParents = max(1, int(keepParents*population))
         # parameter ranges
         self.paramsUpper = paramsUpper
         self.paramsLower = paramsLower
@@ -144,9 +177,13 @@ class Treibhaus():
         # arrays that contain tuples of (params, quality)
         self.models = []
         self.history = []
+        self.best = None
+        # TODO randomstate for numpy
+        seed(randomSeed)
 
         # now start
-        self.train(generations)
+        if generations > 0:
+            self.train(generations)
 
 
     def getBestParameters(self):
@@ -219,7 +256,14 @@ class Treibhaus():
             # generate params array for the modelGenerator
             # in which initial random parameters are present
             # based on the boundaries
-            params = [None]*len(paramsLower)
+
+            # TODO add parameters to constructor for alpha and beta / mean and variance,
+            # so that they can be sampled from probability density functions
+            # like beta or gaussian, depending on whether or not there is a range
+            # on the parameter. because when there is no range, how am i going to
+            # initialize the population?
+
+            params = [0]*len(paramsLower)
             for i in range(len(params)):
                 if paramsTypes[i] == int:
                     params[i] = randint(paramsLower[i], paramsUpper[i])
@@ -234,6 +278,40 @@ class Treibhaus():
         return paramsList
 
 
+    def toAlphaAndBeta(self, param, lower, upper, sharpness):
+        """
+        takes a param that will always between "lower" and "upper",
+
+        for example -1.3, which is between -2.0 and 0.0. Another
+        example: the number of days per month is always between 28
+        and 31, the param could be 30.
+        
+        For distributions like beta, gamma or Dirichlet, high alpha and
+        beta parameters mean that the probability is high to sample the
+        mean of the distribution. This is controlled using the sharpness
+        parameter. High sharpness means less variance.
+
+        Returns alpha and beta such that the mean of the distribution
+        that can be formed using those 2 parameters is always the
+        param parameter, translated to a space between 0 and 1.
+        """
+
+        # the current position is also the mean of the distribution
+        # between 0 and 1
+        position = (param-lower)/(upper-lower)
+        alpha = position * sharpness
+        beta = sharpness - alpha
+
+        if alpha == 0:
+            alpha = sys.float_info.min
+            beta = sharpness - alpha
+
+        if beta == 0:
+            beta = sys.float_info.min
+            alpha = sharpness - beta
+
+        return alpha, beta
+
 
     def train(self, generations):
         """
@@ -245,6 +323,8 @@ class Treibhaus():
         self.models and also writes down model parameters
         and qualities in self.history.
         """
+
+        assert generations > 0
 
         # some shorthand stuff
         population = self.population
@@ -270,20 +350,24 @@ class Treibhaus():
             for model in models:
                 paramsList += [model[0]]
 
+        unsuccessfulGenerations = 0
 
         # train the generations
         for _ in range(generations):
 
             # reset
             paramsList = []
+            childModels = []
             # print("---")
 
             # First, determine the parameters that are going to be used to train.
             # The result is paramsList, a list like [[param1, param2, ...], ...]
             if len(models) == 0:
                 # generate initial parameters if no models
+                # this in here will be called only once, because
+                # as soon as training happened, models are available
                 # as parents available:
-                paramsList = self.generateInitialParameters(population*2)
+                paramsList = self.generateInitialParameters(population + self.keepParents)
                 
                 # at first paramsList will be population*2 elements large
                 # because it initializes, so to say, random parents and children
@@ -291,22 +375,31 @@ class Treibhaus():
                 # Later, 10 parents create 10 children. population is set to 10.
                 # then they will undergo selection together.
             else:
-                paramsList = self.generateInitialParameters(max(1, int(population*self.newIndividuals)))
+                newIndividualsInt = int(population*self.newIndividuals)
+                paramsList = self.generateInitialParameters(newIndividualsInt)
+                
+                # iterate over individuals
                 while len(paramsList) < population:
-
-                    # select 2 random parents
-                    # this will make it very likely to select a high index
-                    # which corresponds to the model with the highest fitness
-                    weights = [x for x in range(population)]
-                    iP1 = choices(range(population), weights)[0]
-                    iP2 = choices(range(population), weights)[0]
+                    
+                    # select 2 random parents. good parents are more likely to be selected (choices function)
+                    # - don't select from new individuals with unknown quality
+                    # - don't put too much weight on the best models, as it would prevent exploration of other minimas
+                    # - don't select the same individual for parent1 and parent2
+                    # alternatively: remove bad individuals and select uniformly from those that are left
+                    weights = [0]*newIndividualsInt + [x for x in range(1, population - newIndividualsInt+1)]
+                    iP1 = 0
+                    iP2 = 0
+                    while iP1 == iP2:
+                        iP1 = choices(range(population), weights)[0]
+                        iP2 = choices(range(population), weights)[0]
                     p1 = models[iP1][0]
                     p2 = models[iP2][0]
 
-                    # 3. recombine and mutate
-                    # child is an array that contains parameters and that is passed to modelGenerator
+                    # "childParams" is an array that contains parameters and that is passed to modelGenerator
                     childParams = [None] * len(p1)
+                    # iterate over parameters of a single individual that is going to be made out of the two parents p1 and p2
                     for iParam in range(len(childParams)):
+
                         # recombine
                         if randint(0,1): childParams[iParam] = p1[iParam]
                         else:            childParams[iParam] = p2[iParam]
@@ -316,31 +409,18 @@ class Treibhaus():
                         param = childParams[iParam]
                         
                         # mutate
-                        # I make the assumption here, that two bad parents won't result into a good child
-                        # hence, I mutate it a lot. Basically this sprays random models into the space again
-                        # worst parents possible? a should be 1
-                        # best parents possible? a should be close to 0 (but not zero, because 1/0 otherwise)
-                        a = ((population - (max(iP1, iP2))) / population)**self.explorationrate[iParam]
-                        
-                        # the beta distribution works for chosing random
-                        # values between two constraints with a high
-                        # probability around the current value
-                        # 10000 is a figured out value by trial and error
-                        sharpness = 1/a # the higher the sharper. the lower a, the higher.
 
-                        # the current position is also the mean of the distribution
-                        # between 0 and 1
-                        position = (param-lower)/(upper-lower)
-                        if paramsTypes[iParam] == int:
-                            # to avoid alpha or beta being 0 because of previous
-                            # rounding, manipulate the position by decreasing "lower"
-                            # and increasing "upper" while not changing the range from
-                            # which the parameter is allowed to be
-                            position = (param-lower+1)/(upper-lower+2)
+                        # parameters of the beta distribution
+                        sharpness = self.explorationrate[iParam]
+                        alpha, beta = self.toAlphaAndBeta(param, lower, upper, sharpness)
+                        # the more unsuccessful generations, the more alpha and beta should be like [1, 1]
+                        # to form an uniform distribution.
+                        a = self.dynamicExploration**unsuccessfulGenerations - 1
+                        alpha = (1 * a + alpha) / (a + 1)
+                        beta  = (1 * a + beta ) / (a + 1)
 
-                        # parameters of the beta distribution and taking a sample
-                        alpha = (position) * sharpness
-                        beta = (1-position) * sharpness
+                        # now take a sample ] 1, 0 [ from beta that will be the new parameter
+                        # beta is good for taking random samples in a constrained space
                         sample = np.random.beta(alpha, beta)
 
                         # translate that sample between 0 and 1 to one between lower and upper
@@ -350,13 +430,12 @@ class Treibhaus():
                         if paramsTypes[iParam] == int:
                             param = round(param)
 
-                        # make sure it is within range
-                        childParams[iParam] = max(lower, min(upper, param))
-
+                        # the mutated parameter is now stored in param
+                        childParams[iParam] = param
 
                     paramsList += [childParams]
 
-            # now train, can easily be multiprocessed now
+            # now evaluate fitness, can easily be multiprocessed now
             if self.workers > 1:
                 # fill queue with the parameters that the models should train on
                 for childParams in paramsList:
@@ -364,34 +443,48 @@ class Treibhaus():
                 # evaluate results
                 for _ in range(len(paramsList)):
                     childParams, fitness = self.queueResults.get()
-                    models += [(childParams, fitness)]
-                    self.history += [(childParams, fitness)]
+                    childModels += [(childParams, fitness)]
                     # print("model finished")
             else:
-                # otherwise, just train one after the other.
+                # otherwise, just evaluate one after the other in one single process.
                 for childParams in paramsList:
                     fitness = self.fitnessEvaluator(self.modelGenerator(childParams))
-                    # difference between models and history is, that
-                    # elements will not be removed from the history,
-                    # only added
-                    models += [(childParams, fitness)]
-                    self.history += [(childParams, fitness)]
+                    childModels += [(childParams, fitness)]
 
             # sort models by quality
             # high fitness is desired, this will sort it from lowest to highest
-            # that means that models[0] is the worst model
-            # select [population:], because at this point models contains population*2 models because each generation
-            # adds a new set of models to the models array. Select after sorting, so that the best models from both
-            # generations form the new generation. => Performs better than just proceeding with the children.
-            models = sorted(models, key=lambda modelTuple: modelTuple[1])[population:]
+            # that means that models[0] will be the worst model
+            # - models still contains the sorted old models from the previous generation
+            # - childModels contains the unsorted models from the new generation
+            # - select keepParents of the best models from the previous generations (don't use [-keepParents:], because keepParents can be 0)
+            # - sort the whole thing (which has the size of keepParents + population) based on the fitness
+            # - now remove keepParents from it, so that the size is population again
+            # so after all having keepParents set to 25% of the population does not strictly mean that there are
+            # parents for the next generation that are from the old generation. They are not, if the worst model
+            # of the new generation performed better than the best model of the last generation.
+            models = sorted(models[population-self.keepParents:]+childModels, key=lambda modelTuple: modelTuple[1])[self.keepParents:]
+
+            # difference between models and history is, that
+            # elements will not be removed from the history,
+            # only added. add all the individuals to the history for nice plotting
+            self.history += models
+
+            # to get out of local minima:
+            # dynamic number of new individuals and explorationrate:
+            if self.dynamicExploration != 1:
+                if not self.best is None and models[-1][1] <= self.best[1]:
+                    unsuccessfulGenerations += 1
+                else:
+                    unsuccessfulGenerations = 0
+                    # new best performing model found, overwrite old one
+                    self.best = models[-1]
 
         # genetic algorithm finished. store models in self for future training continuation
         # determine the model qualities and sort one more time:
         self.models = sorted(models, key=lambda modelTuple: modelTuple[1])
 
         # print("best model:", self.models[-1][0], self.models[-1][1])
-
-        # models[-1] is the best model
+        # models[-1] is the best model because of the sorting
         self.best = models[-1]
 
         # also end the processes and close the queue
