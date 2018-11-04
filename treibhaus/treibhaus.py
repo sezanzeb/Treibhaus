@@ -9,20 +9,50 @@ from random import seed
 from multiprocessing import Process, Queue
 import numpy as np
 import sys
+import numbers
 
 __author__ = "Tobias B <proxima@hip70890b.de>"
 
+# todo with the highest priority is on the top
+
+# TODO divide the code into functions and stuff that handle some tasks individually
+# in order to clean it up. This should also force the code into a structure in which
+# individual functionalities can be more easily altered without destroying everything.
+
+# TODO why is explorationDamping by default 10000 what
+# maybe add mathematical explanation into the docstring
+
+# TODO: sklearn wrapper
+
+# TODO: make mutation based on the derivative of the observed loss function, so
+# that sliding down the loss function becomes more likely instead of taking steps back.
+# for that, add a learning rate parameter. Take the mean of the derivative vectors of the parents.
+# For the derivative basically just look at how much better or worse the previous step was and
+# try to avoid mutating into to the previous position again if it was worse. Maybe also take
+# previous gradients into account to create a momentum.
+# new_derivative = ((old_derivative * momentum + observed_derivative) / (1+momentum))
+# and then use new_derivative * learning_rate on the mutation distribution to move it
+# in the direction of the slope.
+# or something.
+
+# TODO numParents parameter, that says how many parents to use for one child
+# set it to 1 to just use mutation. together with a high explorationDamping value
+# and a learningrate, you get something very similar to gradient descent.
+
+# TODO create animated visualizations of how the algorithm slides down some easy functions
+# depending on the parameters
+
 class Treibhaus():
     def __init__(self, modelGenerator, fitnessEvaluator, population, generations,
-                 paramsLower, paramsUpper, paramsTypes=None, randomSeed=None,
-                 newIndividuals=0, explorationrate=10000, keepParents=0.1,
-                 dynamicExploration=1.1, workers=1):
+                 params, randomSeed=None, newIndividuals=0, explorationDamping=10000,
+                 keepParents=0, dynamicExploration=1.1, workers=1, stoppingKriterion=4,
+                 verbose=False, ignoreErrors=False):
         """
-        Finds the best model using genetic algorithms.
+        Finds the best model using evolutionary techniques.
 
         Creates offspring based on the current population, and performs
         selection on a merged population of offspring and parents such that
-        the size of the population remains at the hyperparameter.
+        the size of the population remains at size of the hyperparameter.
         
         Parents are selected by random, but selecting them becomes more likely when
         they performed well. Children of well performed parents mutete only slightly,
@@ -48,7 +78,14 @@ class Treibhaus():
             how many models to combine and mutate each generation
         generations : int
             after how many generations to stop the algorithm
-        paramsLower : array
+        params : array
+            array of 3-tuples
+
+            [(200, 255, int),
+            (0.3, 1.0, float)]
+
+            first element in tuple:
+
             the random initial model generation and the mutation need
             bounds of how much to randomize. This is the upper bound.
             [-10, -10]. It randomizes excluding those numbers, so
@@ -57,24 +94,38 @@ class Treibhaus():
             TODO add -inf as possibility, which will cause a gamma or
             gauss (? maybe something for which the parameters work similar to beta and gamma would be better,
             or translate alpha and beta to mean and variance. or whatever make a function that handles that
-            given position and explorationrate. explorationrate has to be the variance in case of gauss. yes that's
+            given position and explorationDamping. explorationDamping has to be the variance in case of gauss. yes that's
             the solution that gives the user the most control. and position is just used as the mean)
             distribution to be used instead of beta, depending on
             upper being inf
 
-        paramsUpper : array
-            the random initial model generation and the mutation need
-            bounds of how much to randomize.
-            [10, 10]. It randomizes excluding those numbers, so
-            it will never be randomized to 10.
-        paramsTypes : array
+            second element in tuple:
+
+            this is the lower bound, just like in the first element
+            of the tuple
+        
+            third element in tuple:
+
             determines how to mutate. ints will be in/decremented
             floats will be added with a random float
             example:
-            [float, int]
+            float or int
 
-            default: None. will be automatically detected from
-            paramsLower and paramsUpper.
+            TODO fourth element in tuple:
+
+            boolean logspace or linear, so that the
+            mutation probability distribution decreases its
+            variance when closer to 0
+
+            TODO: another possibility:
+            {'param1': (lower, upper, type), 'param2': etc.}
+
+            autodetect it. really try to make the code clean
+            for that one, because in my experience autodetection
+            stuff can get quite large.
+            1.: is it an array of 3-tuples? model receives *params
+            2.: is it a dict of 3-tuples? model receives **params
+
         randomSeed : number
             random seed. setting this to the same number each time
             means that the results will be the same each time. Setting
@@ -85,24 +136,21 @@ class Treibhaus():
             should be new random individuals in each generation. A value
             of 1 corresponds to complete noise in each generation.
             Default: 0
-        explorationrate : number
+        explorationDamping : number
             the lower, the more severe mutations will happen. The higher,
             the slower they will move around in minimas. Default: 5
 
             can also be an array for rates individual
-            for parameters. explorationrate = [2000, 1100, 50000]
+            for parameters. explorationDamping = [2, 11, 5]
 
             > 0
 
             this is the sharpness of the distribution that is
             used to mutate. parameters of the distribution add up
-            to explorationrate
+            to explorationDamping
         keepParents : float
             how many of the best parents to take into the next generation.
             float between 0 and 1
-
-            TODO when negative, remove that many bad performing parents
-            before making children
         dynamicExploration : float
             will make more exploration when no better performing
             individuals were found in a generation. Default: 1.1
@@ -111,6 +159,16 @@ class Treibhaus():
             How many processes will be spawned to train models in parallel.
             Default is 1, which means that the multiprocessing package will
             not be used. Can be set to os.cpu_count() for example
+        stoppingKriterion : number
+            after this number of generations that were not able to produce
+            a new best individual, the training is stopped. Default: 4
+            Set to None to not stop until last generation is completed.
+        verbose : boolean
+            If True, will print when new generation starts. Default: False
+        ignoreErrors : boolean
+            If True, will not stop the optimization when one of the
+            individuals throws an error. Defualt: False
+
         Raises
         ------
         ValueError
@@ -120,6 +178,13 @@ class Treibhaus():
             when one of the values in paramsLower and paramsUpper
             is not of float or int
         """
+
+        params = np.array(params).T
+        paramsLower = params[0]
+        paramsUpper = params[1]
+        paramsTypes = params[2]
+
+        assert population > 1
 
         # has to be int or float:
         for i in range(len(paramsLower)):
@@ -137,28 +202,40 @@ class Treibhaus():
                 else:
                     paramsTypes += [type(paramsLower[0])]
 
-        # create explorationrate for each param
-        if np.array([explorationrate]).shape == (1,):
-            explorationrate = [explorationrate] * len(paramsTypes)
+        # create explorationDamping for each param
+        if np.array([explorationDamping]).shape == (1,):
+            explorationDamping = [explorationDamping] * len(paramsTypes)
 
         # otherwise only noise will be produced
-        for rate in explorationrate:
-            assert rate > 0
+        # for rate in explorationDamping:
+        #     assert rate > 0
+        # edit: well maybe that is desired for
+        # one of the optimized parameters
 
         # should all be of the same length:
-        if not len(paramsLower) == len(paramsTypes) == len(paramsUpper) == len(explorationrate):
+        if not len(paramsLower) == len(paramsTypes) == len(paramsUpper) == len(explorationDamping):
             raise ValueError("paramsTypes, paramsLower and paramsUpper should be of the same length:",
                             len(paramsLower), len(paramsTypes), len(paramsUpper))
 
 
         # some basic settings
         self.population = population
+
         self.modelGenerator = modelGenerator
+        # if no modelGenerator, then just pass through
+        # for the fitnessEvaluator
+        if modelGenerator is None:
+            self.modelGenerator = self.passThroughGenerator 
+
         self.fitnessEvaluator = fitnessEvaluator
         self.newIndividuals = newIndividuals
         self.dynamicExploration = dynamicExploration
-        # exploration is dynamic, explorationrate can change but will be reset sometimes
-        self.explorationrate = explorationrate
+        self.stoppingKriterion = stoppingKriterion
+        self.verbose = verbose
+        self.ignoreErrors = ignoreErrors
+        # exploration is dynamic, explorationDamping can change but will be reset sometimes
+        # make sure it's a numpy array for fancy math operations
+        self.explorationDamping = np.array(explorationDamping, float)
         # percent to number of parents that are taken into the next generation
         # always keep the very best one
         self.keepParents = max(1, int(keepParents*population))
@@ -185,6 +262,8 @@ class Treibhaus():
         if generations > 0:
             self.train(generations)
 
+    def passThroughGenerator(self, *x):
+        return x
 
     def getBestParameters(self):
         return self.best[0]
@@ -192,6 +271,8 @@ class Treibhaus():
     def getHighestFitness(self):
         return self.best[1]
     
+    def getBestIndividual(self):
+        return self.modelGenerator(*self.getBestParameters())
 
     def startProcesses(self):
         self.queueParams = Queue()
@@ -297,6 +378,19 @@ class Treibhaus():
         """
 
         # the current position is also the mean of the distribution
+
+        # NO TODO it has to be the median, so that
+        # mutation the the left or the right is equally likely.
+        # At the moment it always is alpha and beta for a beta distribution,
+        # as the search space is constrained and doesn't allow for unconstrained
+        # infinity search spaces, in which case the distribution should increase
+        # its variance logarithmically as it moves farther towards infinity.
+        # It would be a gamma distribution in that case.
+        # TODO this also rises the question on what to do when both search directions
+        # are unconstrained and one parameter is close to 0, how would it mutate to
+        # the other side of the y-axis? would the variance get smaller and smaller towards
+        # 0? In that case it would be a normal distribution that slides around probably.
+
         # between 0 and 1
         position = (param-lower)/(upper-lower)
         alpha = position * sharpness
@@ -332,7 +426,16 @@ class Treibhaus():
         paramsLower = self.paramsLower
         paramsTypes = self.paramsTypes
 
-        # what the models should look like
+        # make a copy of explorationDamping,
+        # to keep the original one in self,
+        # as dynamicExploration will modify the
+        # damping.
+        explorationDamping = self.explorationDamping
+
+        stoppingKriterion = self.stoppingKriterion
+
+        # list of parameter-sets for each model
+        # that is going to be trained in that generation.
         paramsList = []
 
         # check in train, not constructor, so that train
@@ -343,17 +446,15 @@ class Treibhaus():
         # parents:
         models = self.models
 
-        if len(models) != 0:
-            # parent models already available?
-            # create paramsList from that so that
-            # they don't get randomly initialized
-            for model in models:
-                paramsList += [model[0]]
-
+        # needed for stoppingKriteria and
+        # dynamic explorationrate:
         unsuccessfulGenerations = 0
 
         # train the generations
-        for _ in range(generations):
+        for gen_nr in range(generations):
+
+            if self.verbose:
+                print('[starting generation ' + str(gen_nr) + ']')
 
             # reset
             paramsList = []
@@ -374,11 +475,18 @@ class Treibhaus():
 
                 # Later, 10 parents create 10 children. population is set to 10.
                 # then they will undergo selection together.
+
             else:
+                # else if the model array is intact,
+                # continue with crossover and mutation
+
                 newIndividualsInt = int(population*self.newIndividuals)
-                paramsList = self.generateInitialParameters(newIndividualsInt)
+                paramsList += self.generateInitialParameters(newIndividualsInt)
                 
-                # iterate over individuals
+                # iterate over individuals.
+                # do this in this while loop, because
+                # the number of parents might vary
+                # depending on the ignoreErrors parameters.
                 while len(paramsList) < population:
                     
                     # select 2 random parents. good parents are more likely to be selected (choices function)
@@ -411,7 +519,7 @@ class Treibhaus():
                         # mutate
 
                         # parameters of the beta distribution
-                        sharpness = self.explorationrate[iParam]
+                        sharpness = self.explorationDamping[iParam]
                         alpha, beta = self.toAlphaAndBeta(param, lower, upper, sharpness)
                         # the more unsuccessful generations, the more alpha and beta should be like [1, 1]
                         # to form an uniform distribution.
@@ -448,13 +556,27 @@ class Treibhaus():
             else:
                 # otherwise, just evaluate one after the other in one single process.
                 for childParams in paramsList:
-                    fitness = self.fitnessEvaluator(self.modelGenerator(childParams))
+                    fitness = 0
+                    if self.ignoreErrors:
+                        # if errors should be ignored:
+                        # iterate to the next params that should
+                        # be trained on, in case of an error.
+                        try: fitness = self.fitnessEvaluator(self.modelGenerator(*childParams))
+                        except: continue
+                    else:
+                        # if errors should be thrown, just do it without try except
+                        fitness = self.fitnessEvaluator(self.modelGenerator(*childParams))
+
+                    # do a quick check for obvious errors
+                    assert isinstance(fitness, numbers.Number)
+
                     childModels += [(childParams, fitness)]
 
             # sort models by quality
             # high fitness is desired, this will sort it from lowest to highest
             # that means that models[0] will be the worst model
-            # - models still contains the sorted old models from the previous generation
+            # - models still contains the old (and already sorted) models from the previous generation
+            # - models is empty at first, but the [...:] selector will not break. it will just return []
             # - childModels contains the unsorted models from the new generation
             # - select keepParents of the best models from the previous generations (don't use [-keepParents:], because keepParents can be 0)
             # - sort the whole thing (which has the size of keepParents + population) based on the fitness
@@ -467,17 +589,27 @@ class Treibhaus():
             # difference between models and history is, that
             # elements will not be removed from the history,
             # only added. add all the individuals to the history for nice plotting
-            self.history += models
+            self.history += childModels
 
-            # to get out of local minima:
-            # dynamic number of new individuals and explorationrate:
             if self.dynamicExploration != 1:
-                if not self.best is None and models[-1][1] <= self.best[1]:
-                    unsuccessfulGenerations += 1
-                else:
-                    unsuccessfulGenerations = 0
-                    # new best performing model found, overwrite old one
-                    self.best = models[-1]
+                self.explorationDamping 
+
+            if not self.best is None and models[-1][1] <= self.best[1]:
+                # The generation was unsuccessful. Modify explorationDamping,
+                # to get out of local minima:
+                explorationDamping /= self.dynamicExploration
+                unsuccessfulGenerations += 1
+            else:
+                # new best performing model found, overwrite old one
+                unsuccessfulGenerations = 0
+                self.best = models[-1]
+                # reset exploration
+                explorationDamping = self.explorationDamping
+
+            if not stoppingKriterion is None and unsuccessfulGenerations >= stoppingKriterion:
+                if self.verbose:
+                    print('[stopping criterion applied. end]')
+                break
 
         # genetic algorithm finished. store models in self for future training continuation
         # determine the model qualities and sort one more time:

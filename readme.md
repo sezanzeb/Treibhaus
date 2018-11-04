@@ -1,11 +1,8 @@
 # Treibhaus
 
-Finds the best model using genetic algorithms. An example can be found
-in example.py, in which the rastrigin function is optimized.
-
-Creates offspring based on the current population, and performs
-selection on a merged population of offspring and parents such that
-the size of the population remains at the hyperparameter.
+Tries to find the best model using genetic methods.
+An example can be found in example.py, in which the rastrigin
+function is optimized.
 
 Parents are selected by random, but selecting them becomes more likely when
 they performed well. Children of well performed parents mutete only slightly,
@@ -13,7 +10,17 @@ those of worse performing mutate more.
 
 Genes of parents are combined randomly.
 
-Can train and evaluate models on multiple cores.
+Can be multiprocessed.
+
+## Contributing
+
+"TODO" markings are scattered across treibhaus.py that can be worked on.
+
+New examples and benchmarks are also much appreciated, as well as new ideas and features.
+
+To goal is to have something that works out of the box for *easy* problems 
+with a very minimal coding effort. Other than that, it's mostly for the sake
+of fun, implementing new funky features and ideas.
 
 ## Installation
 
@@ -28,6 +35,8 @@ from treibhaus import Treibhaus
 ```
 
 ## Example
+
+TODO this example is outdated :(. also update the two example python files.
 
 Small chunk of https://github.com/sezanzeb/Treibhaus/blob/master/example.py. Model.fitness is a function, that returns a high value for good models and receives the model as parameter.
 

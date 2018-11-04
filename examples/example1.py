@@ -30,19 +30,13 @@ class Model():
         return 1/rastrigin
 
 # ----------------------------------- training -----------------------------------
-   
-def modelGenerator(params):
-    # function that feeds the optimized
-    # params into the model constructor
-    model = Model(params[0], params[1], params[2])
-    return model
 
-optimizer = Treibhaus(modelGenerator, Model.fitness,
-                      30, 10, # population and generations
-                      [-10.0, -10.0, -10.0], # lower
-                      [ 10.0,  10.0,  10.0], # upper
-                      [float, float, float], # types
-                      workers=os.cpu_count()) # multiprocessing
+optimizer = Treibhaus(Model, Model.fitness,
+                      10, 300, # population and generations
+                      [[-10, 10, float],
+                       [-10, 10, float],
+                       [-10, 10, float]],
+                      workers=1)#os.cpu_count()) # multiprocessing
 
 # continue training for another 5 generations
 optimizer.train(5)
