@@ -126,7 +126,7 @@ optimizer = Treibhaus(modelGenerator, fitness,
                       20, 0, # initialize population, but no training for now
                       # TODO params that can go to - and + inf. use gauss mutation then
                       [[-20, 20, float]] * nParams,
-                      workers=1, stoppingKriterion=None)#os.cpu_count()) # multiprocessing
+                      workers=1, stoppingKriterionGens=None)#os.cpu_count()) # multiprocessing
  
 
 # train using the train function instead
@@ -155,7 +155,7 @@ fitness(modelGenerator(*optimizer.getBestParameters()), True)
 
 # just like example1.py
 fitnessHistory = np.array(optimizer.history).T[1]
-points = np.array([np.array(a) for a in np.array(optimizer.history)[:,0]])
+points = np.array([a.params for a in optimizer.history])
 for i in range(len(points.T)):
     plt.scatter(x=range(len(points)), y=points.T[i], s=0.5)
 plt.show()

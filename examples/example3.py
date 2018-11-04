@@ -11,9 +11,8 @@ import os
 
 # quadratic function
 a = 20 # nsteps
-b = 1
 X = np.arange(-1, 1+2/a, 2/a)
-y = X**2
+y = X**3
 
 def calc(thetas):
     global X
@@ -44,12 +43,18 @@ def test(thetas):
 
 # ----------------------------------- training -----------------------------------
 
-optimizer = Treibhaus(None, test,
-                      200, 100, # initialize population, but no training for now
-                      # TODO params that can go to - and + inf. use gauss mutation then
-                      [[-2, 2, float]] * 2,
-                      workers=1)#os.cpu_count()) # multiprocessing
-
+performance = 0
+for i in range(100):
+    optimizer = Treibhaus(None, test,
+                        10, 100, # initialize population, but no training for now
+                        # TODO params that can go to - and + inf. use gauss mutation then
+                        [[-5, 5, float]] * 4,
+                        workers=1,#os.cpu_count(), # multiprocessing
+                        stoppingKriterionGens=None,
+                        stoppingKriterionFitness=-0.005,
+                        verbose=False)
+    performance += optimizer.generationsUntilStopped
+print(performance)
 
 # ----------------------------------- results -----------------------------------
 

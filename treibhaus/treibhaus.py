@@ -42,11 +42,41 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 # TODO create animated visualizations of how the algorithm slides down some easy functions
 # depending on the parameters
 
+
+class Model(): # struct like thing for cleaner code
+    def __init__(self, params, fitness):
+        self.params = params
+        self.fitness = fitness
+
+
+class ChildJob():
+
+    def __init__(self, parents):
+        """
+        contains the parameters of the parents and the fitness of the parents.
+        The parents fitness is needed to approximate the loss function derivative.
+
+        Performs crossover and mutation and stores the parameters inside itself,
+        so that the worker can train on this ChildJob
+
+        Parameters
+        ----------
+        parents : 2-tuple of class Model objects
+
+        """
+        pass
+
+    def crossover():
+        pass
+
+    def mutate():
+        pass
+
 class Treibhaus():
     def __init__(self, modelGenerator, fitnessEvaluator, population, generations,
                  params, randomSeed=None, newIndividuals=0, explorationDamping=10000,
-                 keepParents=0, dynamicExploration=1.1, workers=1, stoppingKriterion=4,
-                 verbose=False, ignoreErrors=False):
+                 keepParents=0, dynamicExploration=1.1, workers=1, stoppingKriterionGens=4,
+                 stoppingKriterionFitness=None, verbose=False, ignoreErrors=False):
         """
         Finds the best model using evolutionary techniques.
 
@@ -159,10 +189,12 @@ class Treibhaus():
             How many processes will be spawned to train models in parallel.
             Default is 1, which means that the multiprocessing package will
             not be used. Can be set to os.cpu_count() for example
-        stoppingKriterion : number
+        stoppingKriterionGens : number
             after this number of generations that were not able to produce
             a new best individual, the training is stopped. Default: 4
             Set to None to not stop until last generation is completed.
+        stoppingKriterionFitness : number
+            when the fitness of the best model is above this value, stop.
         verbose : boolean
             If True, will print when new generation starts. Default: False
         ignoreErrors : boolean
@@ -230,7 +262,8 @@ class Treibhaus():
         self.fitnessEvaluator = fitnessEvaluator
         self.newIndividuals = newIndividuals
         self.dynamicExploration = dynamicExploration
-        self.stoppingKriterion = stoppingKriterion
+        self.stoppingKriterionGens = stoppingKriterionGens
+        self.stoppingKriterionFitness = stoppingKriterionFitness
         self.verbose = verbose
         self.ignoreErrors = ignoreErrors
         # exploration is dynamic, explorationDamping can change but will be reset sometimes
@@ -266,10 +299,10 @@ class Treibhaus():
         return x
 
     def getBestParameters(self):
-        return self.best[0]
+        return self.best.params
         
     def getHighestFitness(self):
-        return self.best[1]
+        return self.best.fitness
     
     def getBestIndividual(self):
         return self.modelGenerator(*self.getBestParameters())
@@ -308,7 +341,7 @@ class Treibhaus():
         while True:
             msg = queueParams.get()
             # msg contains the parameters to train on
-            fitness = self.fitnessEvaluator(self.modelGenerator(msg))
+            fitness = self.fitnessEvaluator(*self.modelGenerator(msg))
             queueResults.put((msg, fitness))
 
 
@@ -432,7 +465,8 @@ class Treibhaus():
         # damping.
         explorationDamping = self.explorationDamping
 
-        stoppingKriterion = self.stoppingKriterion
+        stoppingKriterionGens = self.stoppingKriterionGens
+        stoppingKriterionFitness = self.stoppingKriterionFitness
 
         # list of parameter-sets for each model
         # that is going to be trained in that generation.
@@ -451,6 +485,7 @@ class Treibhaus():
         unsuccessfulGenerations = 0
 
         # train the generations
+        self.generationsUntilStopped = -1
         for gen_nr in range(generations):
 
             if self.verbose:
@@ -490,7 +525,8 @@ class Treibhaus():
                 while len(paramsList) < population:
                     
                     # select 2 random parents. good parents are more likely to be selected (choices function)
-                    # - don't select from new individuals with unknown quality
+                    # - don't select from new individuals with unknown quality (hence [0] * newIndividuals)
+                    #   (those will be evaluated later, but not used to generate offspring)
                     # - don't put too much weight on the best models, as it would prevent exploration of other minimas
                     # - don't select the same individual for parent1 and parent2
                     # alternatively: remove bad individuals and select uniformly from those that are left
@@ -500,8 +536,8 @@ class Treibhaus():
                     while iP1 == iP2:
                         iP1 = choices(range(population), weights)[0]
                         iP2 = choices(range(population), weights)[0]
-                    p1 = models[iP1][0]
-                    p2 = models[iP2][0]
+                    p1 = models[iP1].params
+                    p2 = models[iP2].params
 
                     # "childParams" is an array that contains parameters and that is passed to modelGenerator
                     childParams = [None] * len(p1)
@@ -551,7 +587,7 @@ class Treibhaus():
                 # evaluate results
                 for _ in range(len(paramsList)):
                     childParams, fitness = self.queueResults.get()
-                    childModels += [(childParams, fitness)]
+                    childModels += [Model(childParams, fitness)]
                     # print("model finished")
             else:
                 # otherwise, just evaluate one after the other in one single process.
@@ -570,7 +606,7 @@ class Treibhaus():
                     # do a quick check for obvious errors
                     assert isinstance(fitness, numbers.Number)
 
-                    childModels += [(childParams, fitness)]
+                    childModels += [Model(childParams, fitness)]
 
             # sort models by quality
             # high fitness is desired, this will sort it from lowest to highest
@@ -584,7 +620,7 @@ class Treibhaus():
             # so after all having keepParents set to 25% of the population does not strictly mean that there are
             # parents for the next generation that are from the old generation. They are not, if the worst model
             # of the new generation performed better than the best model of the last generation.
-            models = sorted(models[population-self.keepParents:]+childModels, key=lambda modelTuple: modelTuple[1])[self.keepParents:]
+            models = sorted(models[population-self.keepParents:]+childModels, key=lambda model: model.fitness)[self.keepParents:]
 
             # difference between models and history is, that
             # elements will not be removed from the history,
@@ -594,7 +630,7 @@ class Treibhaus():
             if self.dynamicExploration != 1:
                 self.explorationDamping 
 
-            if not self.best is None and models[-1][1] <= self.best[1]:
+            if not self.best is None and models[-1].fitness <= self.best.fitness:
                 # The generation was unsuccessful. Modify explorationDamping,
                 # to get out of local minima:
                 explorationDamping /= self.dynamicExploration
@@ -606,16 +642,24 @@ class Treibhaus():
                 # reset exploration
                 explorationDamping = self.explorationDamping
 
-            if not stoppingKriterion is None and unsuccessfulGenerations >= stoppingKriterion:
+            if not stoppingKriterionFitness is None and self.best.fitness > stoppingKriterionFitness:
                 if self.verbose:
-                    print('[stopping criterion applied. end]')
+                    print('[stopped because the best model is good enough. end after',gen_nr,'generations]')
+                self.generationsUntilStopped = gen_nr
+                break
+
+
+            if not stoppingKriterionGens is None and unsuccessfulGenerations >= stoppingKriterionGens:
+                if self.verbose:
+                    print('[stopped because no improvement was observed anymore. end after',gen_nr,'generations]')
+                self.generationsUntilStopped = gen_nr
                 break
 
         # genetic algorithm finished. store models in self for future training continuation
         # determine the model qualities and sort one more time:
-        self.models = sorted(models, key=lambda modelTuple: modelTuple[1])
+        self.models = sorted(models, key=lambda model: model.fitness)
 
-        # print("best model:", self.models[-1][0], self.models[-1][1])
+        # print("best model:", self.models[-1].params, self.models[-1].fitness)
         # models[-1] is the best model because of the sorting
         self.best = models[-1]
 
