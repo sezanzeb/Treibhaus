@@ -4,9 +4,9 @@ Tries to find the best model using genetic methods.
 
 Still in a very experimental state.
 
-*features/peculiarities:*
+**features/peculiarities:**
 
-- Parents are selected by random, but selecting them becomes more likely when
+- Parents are selected at random, but selecting them becomes more likely when
 they performed well. Children of well performed parents mutete only slightly,
 those of worse performing mutate more.
 
