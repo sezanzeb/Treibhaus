@@ -32,18 +32,18 @@ class Model():
 # ----------------------------------- training -----------------------------------
 
 optimizer = Treibhaus(Model, Model.fitness,
-                      10, 300, # population and generations
+                      30, 30, # population and generations
                       [[-10, 10, float],
                        [-10, 10, float],
                        [-10, 10, float]],
-                      workers=1)#os.cpu_count()) # multiprocessing
+                      workers=os.cpu_count()) # multiprocessing
 
 # continue training for another 5 generations
 optimizer.train(5)
 
 # ----------------------------------- results -----------------------------------
 
-print("best model:", optimizer.getBestParameters(), "with a fitness (higher is better) of:", optimizer.getHighestFitness())
+print("best model:", optimizer.get_best_parameters(), "with a fitness (higher is better) of:", optimizer.get_highest_fitness())
 
 points = np.array([a.params for a in optimizer.history])
 
