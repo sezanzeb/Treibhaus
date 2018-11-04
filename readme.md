@@ -48,7 +48,7 @@ See the examples folder.
 
 - example1: rastrigin function
 - example2: optimizing a neural network to match a quadratic function (does not work yet :p)
-- example3: optimizes a polynomial function to match a qubic function
+- example3: optimizes a polynomial function to match a cubic function
 - example4: tests if gradient ascent in the GA (climbing to a high fitness) performs better on a very simple example (TODO: create a benchmark for vs learning_rate=0)
 
 
