@@ -126,7 +126,7 @@ optimizer = Treibhaus(modelGenerator, fitness,
                       20, 0, # initialize population, but no training for now
                       # TODO params that can go to - and + inf. use gauss mutation then
                       [[-20, 20, float]] * nParams,
-                      workers=1, stoppingKriterionGens=None)#os.cpu_count()) # multiprocessing
+                      workers=1, stopping_kriterion_gens=None)#os.cpu_count()) # multiprocessing
  
 
 # train using the train function instead
@@ -138,10 +138,10 @@ for i in range(20):
 
 # ----------------------------------- results -----------------------------------
 
-print("best model fitness (higher is better) of:", optimizer.getHighestFitness())
+print("best model fitness (higher is better) of:", optimizer.get_highest_fitness())
 
 output = [0] * len(X)
-model = optimizer.getBestIndividual()
+model = optimizer.get_best_individual()
 for i in range(len(X)):
     a = model.forward(X[i])
     output[i] = a[0]
@@ -151,7 +151,7 @@ plt.show()
 
 # reconstruct model, print fitness by setting verbose to True and also print
 # the values for the resulting curve.
-fitness(modelGenerator(*optimizer.getBestParameters()), True)
+fitness(modelGenerator(*optimizer.get_best_parameters()), True)
 
 # just like example1.py
 fitnessHistory = np.array(optimizer.history).T[1]

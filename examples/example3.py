@@ -43,36 +43,33 @@ def test(thetas):
 
 # ----------------------------------- training -----------------------------------
 
-performance = 0
-for i in range(100):
-    optimizer = Treibhaus(None, test,
-                        10, 100, # initialize population, but no training for now
-                        # TODO params that can go to - and + inf. use gauss mutation then
-                        [[-5, 5, float]] * 4,
-                        workers=1,#os.cpu_count(), # multiprocessing
-                        stoppingKriterionGens=None,
-                        stoppingKriterionFitness=-0.005,
-                        verbose=False)
-    performance += optimizer.generationsUntilStopped
-print(performance)
+optimizer = Treibhaus(None, test,
+                    20, 100, # initialize population, but no training for now
+                    # TODO params that can go to - and + inf. use gauss mutation then
+                    [[-5, 5, float]] * 4,
+                    workers=1,#os.cpu_count(), # multiprocessing
+                    stopping_kriterion_gens=None,
+                    stopping_kriterion_fitness=-0.005,
+                    verbose=False,
+                    learning_rate=0.2)
 
 # ----------------------------------- results -----------------------------------
 
-print("best model fitness (higher is better) of:", optimizer.getHighestFitness())
+print("best model fitness (higher is better) of:", optimizer.get_highest_fitness())
 
 output = [0] * len(X)
-thetas = optimizer.getBestIndividual()
+thetas = optimizer.get_best_individual()
 plt.plot(X, y)
 plt.plot(X, calc(thetas))
 plt.show()
 
 # reconstruct model, print fitness by setting verbose to True and also print
 # the values for the resulting curve.
-test(calc(optimizer.getBestParameters()))
+test(calc(optimizer.get_best_parameters()))
 
 # just like example1.py
 fitnessHistory = np.array(optimizer.history).T[1]
-points = np.array([np.array(a) for a in np.array(optimizer.history)[:,0]])
+points = np.array([a.params for a in optimizer.history])
 for i in range(len(points.T)):
     plt.scatter(x=range(len(points)), y=points.T[i], s=0.5)
 plt.show()

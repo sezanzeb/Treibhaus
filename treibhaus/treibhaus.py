@@ -15,6 +15,8 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 
 # todo with the highest priority is on the top
 
+# TODO create an example for discrete domains
+
 # TODO divide the code into functions and stuff that handle some tasks individually
 # in order to clean it up. This should also force the code into a structure in which
 # individual functionalities can be more easily altered without destroying everything.
@@ -23,17 +25,6 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 # maybe add mathematical explanation into the docstring
 
 # TODO: sklearn wrapper
-
-# TODO: make mutation based on the derivative of the observed loss function, so
-# that sliding down the loss function becomes more likely instead of taking steps back.
-# for that, add a learning rate parameter. Take the mean of the derivative vectors of the parents.
-# For the derivative basically just look at how much better or worse the previous step was and
-# try to avoid mutating into to the previous position again if it was worse. Maybe also take
-# previous gradients into account to create a momentum.
-# new_derivative = ((old_derivative * momentum + observed_derivative) / (1+momentum))
-# and then use new_derivative * learning_rate on the mutation distribution to move it
-# in the direction of the slope.
-# or something.
 
 # TODO numParents parameter, that says how many parents to use for one child
 # set it to 1 to just use mutation. together with a high exploration_damping value
@@ -44,17 +35,46 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 
 
 class Model():
-    def __init__(self, params, fitness=None, parents=None):
-        """contains the parameters of the parents and the fitness of the parents.
-        The parents fitness is needed to approximate the loss function derivative."""
+    def __init__(self, params, fitness=None, parents=None, learning_rate=1):
+        """
+        One single model of the total population.
+
+        contains the parameters of the parents and the fitness of the parents.
+        The parents fitness is needed to approximate the loss function derivative.
+
+        """
+
+        # one of them has to be defined in order to have parameters for the model:
+        assert not (params is None and parents is None)
+        # if parents defined, it should be a np array:
+        assert not (not parents is None and type(parents[0].params) != np.ndarray)
+
+        # perform crossover of parents if this model is not randomly generated
+        if params is None and not parents is None:
+            params = self.crossover(params, parents)
+
+        # there absolutely have to be params now:
         assert len(params) > 0
+
         self.params = params
         self.fitness = fitness
         self.parents = parents
         self.derivative = np.zeros(len(params))
 
-    def crossover():
-        pass
+        self.learning_rate = learning_rate
+        self.momentum = 1
+
+
+    def crossover(self, params, parents):
+        self.crossover_mask = np.array([randint(0, 1) for _ in parents[0].params]).astype(bool)
+        # "params" is an array that contains parameters
+        # and that is passed to model_generator.
+        # First, make a copy of first parent.
+        params = parents[0].params.copy()
+        # iterate over parameters of a single individual that
+        # is going to be made out of the two parents p1 and p2
+        params[self.crossover_mask] = parents[1].params[self.crossover_mask]
+        return params
 
 
     def to_alpha_and_beta(self, param, lower, upper, sharpness):
@@ -133,18 +153,27 @@ class Model():
             # translate that sample between 0 and 1 to one between lower and upper
             param = sample * (upper-lower) + lower
 
+            # add derivative (add, because high fitness is desired)
+            # it's not gradient descent, it's gradient ascent. climb the gradient.
+            # The derivative points to where the fitness becomes higher apparently,
+            # use the experience from the parents to make another move into that direction.
+            param += self.learning_rate * derivative_prediction[iParam]
+
+            # make sure it is still within bounds
+            param = max(param, lower)
+            param = min(param, upper)
+
             # if int is desired, round to remove the comma
             if paramsTypes[iParam] == int:
                 param = round(param)
-
-            # substract derivative
-            param -= derivative_prediction[iParam]
 
             # the mutated parameter is now stored in param
             self.params[iParam] = param
 
 
     def set_fitness(self, fitness):
+        """sets the fitness and calculates the derivative
+        for each parameter compared to the parents"""
         self.fitness = fitness
         self.update_derivative()
             
@@ -152,21 +181,39 @@ class Model():
     # TODO this is a prototype
     # - don't mean the parent derivatives, use them depending on which
     #   parameter came from which parent in the crossover step.
-    # - furthermore it's delta y / delta x, not just delta y.
 
     def update_derivative(self):
         if self.parents == None:
             self.derivative = np.zeros(len(self.params))
         else:
             # new_derivative = ((old_derivative * momentum + observed_derivative) / (1 + momentum))
-            momentum = 0.1
+            momentum = self.momentum
 
             # the observed derivative is just an array of [parent_fitness - child_fitness] * n_params
             # use the mean of the fitness of the parents for that. 
-            observed_derivative = np.array([(self.parents[0].fitness + self.parents[1].fitness) / 2 - self.fitness] * len(self.params))
+            observed_derivative = np.array([self.fitness - (self.parents[0].fitness + self.parents[1].fitness) / 2] * len(self.params))
             
+            # add momentum term to form the new_derivative
             new_derivative = (self.derivative * momentum + observed_derivative) / (1 + momentum)
             # then move into -new_derivative direction after mutating
+
+            # take the mean of the parameters of the parents and see how this child changed compared to that
+            delta_x = self.params - (self.parents[0].params + self.parents[1].params) / 2
+
+            # divide delta_y by delta_x to get the derivative
+            # set those derivatives for which delta_x is 0 to 0
+            mask_zero = delta_x == 0
+            delta_x[mask_zero] = 1
+            new_derivative /= delta_x
+            new_derivative[mask_zero] = 0
+
+            """print('parent1:', self.parents[0].params)
+            print('parent2:', self.parents[1].params)
+            print('self:', self.params)
+            print('delta_x:', delta_x)
+            print('delta_y:', observed_derivative)
+            print('derivative:', new_derivative)
+            print()"""
 
             self.derivative = new_derivative
 
@@ -184,7 +231,8 @@ class Treibhaus():
     def __init__(self, model_generator, fitness_evaluator, population, generations,
                  params, random_seed=None, new_individuals=0, exploration_damping=10000,
                  keepParents=0, dynamicExploration=1.1, workers=1, stopping_kriterion_gens=4,
-                 stopping_kriterion_fitness=None, verbose=False, ignore_errors=False):
+                 stopping_kriterion_fitness=None, verbose=False, ignore_errors=False,
+                 learning_rate=0.1):
         """
         Finds the best model using evolutionary techniques.
 
@@ -308,6 +356,11 @@ class Treibhaus():
         ignore_errors : boolean
             If True, will not stop the optimization when one of the
             individuals throws an error. Defualt: False
+        learning_rate : float
+            If > 0, will see if moving into direction delta_X away from parents
+            resulted into an improvement of the fitness. If yes, children of this
+            individual will continue to move into that direction, if not, children
+            will move into opposite direction (additionally to the mutation)
 
         Raises
         ------
@@ -384,6 +437,8 @@ class Treibhaus():
         self.paramsUpper = paramsUpper
         self.paramsLower = paramsLower
         self.paramsTypes = paramsTypes
+
+        self.learning_rate = learning_rate
 
         # multiprocessing
         self.workers = workers
@@ -486,7 +541,7 @@ class Treibhaus():
             # on the parameter. because when there is no range, how am i going to
             # initialize the population?
 
-            params = [0]*len(paramsLower)
+            params = np.zeros(len(paramsLower))
             for i in range(len(params)):
                 if paramsTypes[i] == int:
                     params[i] = randint(paramsLower[i], paramsUpper[i])
@@ -496,7 +551,7 @@ class Treibhaus():
                     continue
                 raise ValueError(str(i)+"-th type should be int or float, but is:", paramsTypes[i])
 
-            todoList += [Model(params)]
+            todoList += [Model(params, learning_rate=self.learning_rate)]
 
         return todoList
 
@@ -543,10 +598,10 @@ class Treibhaus():
 
         # needed for stoppingKriteria and
         # dynamic explorationrate:
-        unsuccessfulGenerations = 0
+        unsuccessful_generations = 0
 
         # train the generations
-        self.generationsUntilStopped = -1
+        self.generations_until_stopped = generations
         for gen_nr in range(generations):
 
             if self.verbose:
@@ -600,17 +655,8 @@ class Treibhaus():
                     p1 = models[iP1]
                     p2 = models[iP2]
 
-                    # "childParams" is an array that contains parameters and that is passed to model_generator
-                    childParams = [0] * len(p1.params)
-                    # iterate over parameters of a single individual that is going to be made out of the two parents p1 and p2
-                    for iParam in range(len(childParams)):
-                        # recombine
-                        if randint(0,1): childParams[iParam] = p1.params[iParam]
-                        else:            childParams[iParam] = p2.params[iParam]
-                        
-
-                    newborn = Model(childParams, None, (p1, p2))
-                    uniformity = self.dynamicExploration**unsuccessfulGenerations - 1
+                    newborn = Model(None, None, (p1, p2), learning_rate=self.learning_rate)
+                    uniformity = self.dynamicExploration**unsuccessful_generations - 1
                     newborn.mutate(paramsLower, paramsUpper, paramsTypes, exploration_damping, uniformity)
 
                     # Set fitness to None, because that
@@ -648,7 +694,9 @@ class Treibhaus():
                     # do a quick check for obvious errors
                     assert isinstance(fitness, numbers.Number)
 
-                    childModels += [Model(child.params, fitness)]
+                    child.set_fitness(fitness)
+
+                    childModels += [child]
 
             # sort models by quality
             # high fitness is desired, this will sort it from lowest to highest
@@ -676,10 +724,10 @@ class Treibhaus():
                 # The generation was unsuccessful. Modify exploration_damping,
                 # to get out of local minima:
                 exploration_damping /= self.dynamicExploration
-                unsuccessfulGenerations += 1
+                unsuccessful_generations += 1
             else:
                 # new best performing model found, overwrite old one
-                unsuccessfulGenerations = 0
+                unsuccessful_generations = 0
                 self.best = models[-1]
                 # reset exploration
                 exploration_damping = self.exploration_damping
@@ -687,14 +735,14 @@ class Treibhaus():
             if not stopping_kriterion_fitness is None and self.best.fitness > stopping_kriterion_fitness:
                 if self.verbose:
                     print('[stopped because the best model is good enough. end after',gen_nr,'generations]')
-                self.generationsUntilStopped = gen_nr
+                self.generations_until_stopped = gen_nr
                 break
 
 
-            if not stopping_kriterion_gens is None and unsuccessfulGenerations >= stopping_kriterion_gens:
+            if not stopping_kriterion_gens is None and unsuccessful_generations >= stopping_kriterion_gens:
                 if self.verbose:
                     print('[stopped because no improvement was observed anymore. end after',gen_nr,'generations]')
-                self.generationsUntilStopped = gen_nr
+                self.generations_until_stopped = gen_nr
                 break
 
         # genetic algorithm finished. store models in self for future training continuation

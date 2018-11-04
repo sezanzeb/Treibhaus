@@ -1,16 +1,24 @@
 # Treibhaus
 
 Tries to find the best model using genetic methods.
-An example can be found in example.py, in which the rastrigin
-function is optimized.
 
-Parents are selected by random, but selecting them becomes more likely when
+Still in a very experimental state.
+
+*features/peculiarities:*
+
+- Parents are selected by random, but selecting them becomes more likely when
 they performed well. Children of well performed parents mutete only slightly,
 those of worse performing mutate more.
 
-Genes of parents are combined randomly.
+- Genes of parents are combined randomly.
 
-Can be multiprocessed.
+- When not observing improvements, will increase its search radius for
+better individuals.
+
+- Calculates the gradient between parents and their childs to improve
+training in continuous domains.
+
+- Can be multiprocessed using a 'workers' hyperparameter.
 
 ## Contributing
 
@@ -34,26 +42,15 @@ sudo pip3 install -e .
 from treibhaus import Treibhaus
 ```
 
-## Example
+## Examples
 
-TODO this example is outdated :(. also update the two example python files.
+See the examples folder.
 
-Small chunk of https://github.com/sezanzeb/Treibhaus/blob/master/example.py. Model.fitness is a function, that returns a high value for good models and receives the model as parameter.
+- example1: rastrigin function
+- example2: optimizing a neural network to match a quadratic function (does not work yet :p)
+- example3: optimizes a polynomial function to match a qubic function
+- example4: tests if gradient ascent in the GA (climbing to a high fitness) performs better on a very simple example (TODO: create a benchmark for vs learning_rate=0)
 
-```python
-def modelGenerator(params):
-    # function that feeds the optimized
-    # params into the model constructor
-    model = Model(params[0], params[1], params[2])
-    return model
-
-optimizer = Treibhaus(modelGenerator, Model.fitness,
-                      30, 10, # population and generations
-                      [-10.0, -10.0, -10.0], # lower
-                      [ 10.0,  10.0,  10.0], # upper
-                      [float, float, float], # types
-                      workers=os.cpu_count()) # multiprocessing
-```
 
 ![Rastrigin fitness over time](./example.png)
 
