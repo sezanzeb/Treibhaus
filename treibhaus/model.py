@@ -3,13 +3,23 @@ from random import randint
 import sys
 
 class Model():
-    def __init__(self, params, fitness=None, parents=None, learning_rate=0.1, momentum=0.1):
+    def __init__(self, params=None, fitness=None, parents=None, learning_rate=0.1, momentum=0.1):
         """
         One single model of the total population.
 
         contains the parameters of the parents and the fitness of the parents.
         The parents fitness is needed to approximate the loss function derivative.
 
+        one of 'params' or 'parents' have to be supplied in order to either just
+        use the params or crossover the parents to generate params.
+
+        Parameter
+        ---------
+        params : list of floats or ints
+            example: [0.1191723  0.22997084] for 2 parameters
+        parents : 2-tuple of Model objects
+        fitness : float
+            default: None, because fitness might still be unknown.
         """
 
         # one of them has to be defined in order to have parameters for the model:
@@ -36,7 +46,7 @@ class Model():
         # not contain the actual model but rather some parameters, derivatives, and such.
         self.parents = parents
 
-        self.params = params
+        self.params = np.array(params) # make sure it's numpy
         self.fitness = fitness
         self.derivative = np.zeros(len(params))
         self.learning_rate = learning_rate
@@ -181,22 +191,28 @@ class Model():
         given it's current position pased on the parents observed derivatives.
         """
 
+        # no differential mutation desired?
+        if self.learning_rate == 0:
+            return
+
         if self.parents == None or self.learning_rate == 0:
             # when no parents exists (only possible
             # for randomly generated individuals),
             # assume zero derivative for now.
             self.derivative = np.zeros(len(self.params))
-            # (or when no learning_rate is used, in that case
-            # don't waste computational time here.)
         else:
             # this should happen after mutation, or else the gradient will
             # be even more uncertain given the mutated position.
             assert self.is_mutated == True
 
+            # all the variables here are vectors of length len(self.params)
+            # the derivatives are on a per parameter basis, as well as the
+            # deltas and fitness.
 
             # take the fitness per param, depending on the parent that
             # supplied that param during crossover.
-            parents_fitness = np.array([self.parents[0].fitness] * len(self.params))
+            parents_fitness = np.zeros(len(self.params))
+            parents_fitness[:] = self.parents[0].fitness
             parents_fitness[self.crossover_mask] = self.parents[1].fitness
 
             # delta how much better the fitness is for this child, compared to the parents
@@ -205,7 +221,8 @@ class Model():
             # take the param of the parent based on the inversed crossover_mask,
             # then substract itself. Inversed, because otherwise the delta would only
             # be the mutation. By doing the inversion, the delta includes the delta
-            # from the crossover.
+            # from the crossover. Without inversion, it would calculate the differnece between
+            # inherited gene and own gene, which is like small.
             delta_x = self.params - self.crossover_arrays(self.parents[0].params, self.parents[1].params, True)
 
             # this basically just aggregates the parents derivatives,

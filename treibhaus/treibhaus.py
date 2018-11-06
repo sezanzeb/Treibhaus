@@ -23,7 +23,7 @@ class Treibhaus():
                  params, random_seed=None, new_individuals=0, exploration_damping=10000,
                  keepParents=0, dynamicExploration=1.1, workers=1, stopping_kriterion_gens=4,
                  stopping_kriterion_fitness=None, verbose=False, ignore_errors=False,
-                 learning_rate=0.1, momentum=0.1):
+                 learning_rate=0.1, momentum=0.1, initial_population=[]):
         """
         Finds the best model using evolutionary techniques.
 
@@ -158,6 +158,11 @@ class Treibhaus():
             individual move faster and faster down the loss function (or rather,
             up the fitness mountain), when the gradient doesn't change. Same as
             in classic gradient descent.
+        initial_population : list of Treibhaus Model objects
+            This is going to be used instead of randomly initialized
+            individuals. If lower than population, will fill up the
+            remaining individuals with random ones.
+            Default: [] empty list.
 
         Raises
         ------
@@ -237,6 +242,8 @@ class Treibhaus():
 
         self.learning_rate = learning_rate
         self.momentum = momentum
+
+        self.initial_population = initial_population
 
         # multiprocessing
         self.workers = workers
@@ -347,9 +354,10 @@ class Treibhaus():
                 if paramsTypes[i] == float:
                     params[i] = uniform(paramsLower[i], paramsUpper[i])
                     continue
+                # something weird was put into the params parameter of Treibhaus:
                 raise ValueError(str(i)+"-th type should be int or float, but is:", paramsTypes[i])
 
-            todoList += [Model(params, learning_rate=self.learning_rate)]
+            todoList += [Model(params, learning_rate=self.learning_rate, momentum=self.momentum)]
 
         return todoList
 
@@ -391,8 +399,10 @@ class Treibhaus():
         if self.workers > 1 and self.queueParams is None:
             self.start_processes()
 
-        # parents:
+        # parents might be available from previous calls to
+        # the train function, which means they have a fitness.
         models = self.models
+        assert not (len(models) > 0 and models[0].fitness is None)
 
         # needed for stoppingKriteria and
         # dynamic explorationrate:
@@ -411,20 +421,17 @@ class Treibhaus():
             # print("---")
 
             # First, determine the parameters that are going to be used to train.
-            # The result is todoList, a list like [[param1, param2, ...], ...]
+            # The result is todoList, a list like [Model1, Model2, ...].
+            # Either from random generation or crossover.
+
             if len(models) == 0:
-                # generate initial parameters if no models
-                # this in here will be called only once, because
-                # as soon as training happened, models are available
-                # as parents available:
-                todoList = self.generate_initial_parameters(population + self.keepParents)
+                # this is done the first time the train function is called,
+                # afterwards models is not [] anymore.
                 
-                # at first todoList will be population*2 elements large
-                # because it initializes, so to say, random parents and children
-
-                # Later, 10 parents create 10 children. population is set to 10.
-                # then they will undergo selection together.
-
+                num_random_models = population + self.keepParents - len(self.initial_population)
+                todoList = self.generate_initial_parameters(num_random_models)
+                todoList += self.initial_population
+                
             else:
                 # else if the model array is intact,
                 # continue with crossover and mutation
@@ -453,7 +460,7 @@ class Treibhaus():
                     p1 = models[iP1]
                     p2 = models[iP2]
 
-                    newborn = Model(None, None, (p1, p2), learning_rate=self.learning_rate)
+                    newborn = Model(None, None, (p1, p2), learning_rate=self.learning_rate, momentum=self.momentum)
                     uniformity = self.dynamicExploration**unsuccessful_generations - 1
                     newborn.mutate(paramsLower, paramsUpper, paramsTypes, exploration_damping, uniformity)
 
