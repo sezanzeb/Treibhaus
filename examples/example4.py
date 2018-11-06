@@ -14,28 +14,45 @@ class Model():
     def fitness(self):
         return self.x1
 
-print('trains 20.000 generations of 30 individuals each, takes a while...')
+# how often to repeat each benchmark in order to
+# get non-noisy results
+rounds = 500
+
+# make sure the basic parameters remain the same for each benchmark
+params = {
+    'model_generator': Model,
+    'fitness_evaluator': Model.fitness,
+    'population': 30,
+    'generations': 20,
+    'params': [[-10, 10, float]],
+    'stopping_kriterion_fitness': 9.95,
+    'stopping_kriterion_gens': None
+}
+
+print('Trains ' + str(3 * rounds * params['generations']) + ' generations of ' + str(params['population']) + ' individuals each.')
 
 benchmark = 0
-for i in range(500):
-    optimizer = Treibhaus(Model, Model.fitness,
-                        30, 20,
-                        [[-10, 10, float]],
-                        stopping_kriterion_fitness=9.95,
-                        stopping_kriterion_gens=None,
-                        learning_rate=0)
+for i in range(rounds):
+    optimizer = Treibhaus(**params,
+                        learning_rate=0,
+                        momentum=0)
     benchmark += optimizer.generations_until_stopped
-print('benchmark without gradient:', benchmark)
+print('- benchmark without gradient:', benchmark)
 
 benchmark = 0
-for i in range(500):
-    optimizer = Treibhaus(Model, Model.fitness,
-                        30, 20,
-                        [[-10, 10, float]],
-                        stopping_kriterion_fitness=9.95,
-                        stopping_kriterion_gens=None,
-                        learning_rate=1)
+for i in range(rounds):
+    optimizer = Treibhaus(**params,
+                        learning_rate=0.1,
+                        momentum=0)
     benchmark += optimizer.generations_until_stopped
-print('benchmark with gradient:', benchmark)
+print('- benchmark with gradient:', benchmark)
 
-print('lower is better')
+benchmark = 0
+for i in range(rounds):
+    optimizer = Treibhaus(**params,
+                        learning_rate=0.1,
+                        momentum=1)
+    benchmark += optimizer.generations_until_stopped
+print('- benchmark with gradient and momentum:', benchmark)
+
+print('(lower is better)')

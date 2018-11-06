@@ -16,18 +16,19 @@ those of worse performing mutate more.
 better individuals.
 
 - Calculates the gradient between parents and their childs to improve
-training in continuous domains.
+training in continuous domains. Also uses a momentum term.
 
 - Can be multiprocessed using a 'workers' hyperparameter.
 
 ## Contributing
 
-"TODO" markings are scattered across treibhaus.py that can be worked on.
+"TODO" markings are scattered across treibhaus.py that can be worked on. There
+is also a todo.md file.
 
 New examples and benchmarks are also much appreciated, as well as new ideas and features.
 
-To goal is to have something that works out of the box for *easy* problems 
-with a very minimal coding effort. Other than that, it's mostly for the sake
+To goal is to have something that works out of the box for **easy** problems 
+with a *very minimal coding effort*. Other than that, it's mostly for the sake
 of fun, implementing new funky features and ideas.
 
 ## Installation
