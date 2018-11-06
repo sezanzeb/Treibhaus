@@ -8,7 +8,6 @@ from random import choices
 from random import seed
 from multiprocessing import Process, Queue
 import numpy as np
-import sys
 import numbers
 
 # 'Model' controls single individuals,

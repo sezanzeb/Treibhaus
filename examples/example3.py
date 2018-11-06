@@ -9,10 +9,11 @@ import os
 
 # ----------------------------------- model -----------------------------------
 
-# quadratic function
+# polynomial function 3rd degree
 a = 20 # nsteps
 X = np.arange(-1, 1+2/a, 2/a)
-y = X**3
+y = X**3 + X**2 + X
+# to match this, all thetas have to be 1
 
 def calc(thetas):
     global X
@@ -44,14 +45,14 @@ def test(thetas):
 # ----------------------------------- training -----------------------------------
 
 optimizer = Treibhaus(None, test,
-                    20, 100, # initialize population, but no training for now
+                    4, 50, # initialize population, but no training for now
                     # TODO params that can go to - and + inf. use gauss mutation then
-                    [[-5, 5, float]] * 4,
+                    [[-5, 5, float]] * 3,
                     workers=1,#os.cpu_count(), # multiprocessing
                     stopping_kriterion_gens=None,
                     stopping_kriterion_fitness=-0.005,
                     verbose=False,
-                    learning_rate=0.2)
+                    learning_rate=0.5)
 
 # ----------------------------------- results -----------------------------------
 

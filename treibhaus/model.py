@@ -1,5 +1,6 @@
 import numpy as np
 from random import randint
+import sys
 
 class Model():
     def __init__(self, params, fitness=None, parents=None, learning_rate=0.1, momentum=0.1):
@@ -15,36 +16,57 @@ class Model():
         assert not (params is None and parents is None)
         # if parents defined, it should be a np array:
         assert not (not parents is None and type(parents[0].params) != np.ndarray)
+        # both should not be defined at the same time,
+        # that would be unexpected behaviour of the code:
+        assert not (not params is None and not parents is None)
 
         # perform crossover of parents if this model is not randomly generated
         if params is None and not parents is None:
-            params = self.crossover(params, parents)
+            self.crossover_mask = np.array([randint(0, 1) for _ in parents[0].params]).astype(bool)
+            params = self.crossover_arrays(parents[0].params, parents[1].params)
 
-        # there absolutely have to be params now:
+        # there absolutely have to be params now, either from crossover or
+        # because randomly generated parameters were supplied in the constructor.
         assert len(params) > 0
+
+
+        # This basically keeps every model object in a family tree of all individuals,
+        # but so does the history in Treibhaus (except that the history is just a list),
+        # so it should not be a major new unexpected memory leak. The model object does
+        # not contain the actual model but rather some parameters, derivatives, and such.
+        self.parents = parents
 
         self.params = params
         self.fitness = fitness
-        self.parents = parents
         self.derivative = np.zeros(len(params))
-
         self.learning_rate = learning_rate
         self.momentum = momentum
 
-        # to make sure everything happens in the right order
+        # to make sure everything happens in the right order:
+        # (used later for an assertion)
         self.is_mutated = False
 
 
-    def crossover(self, params, parents):
-        self.crossover_mask = np.array([randint(0, 1) for _ in parents[0].params]).astype(bool)
-        # "params" is an array that contains parameters
-        # and that is passed to model_generator.
-        # First, make a copy of first parent.
-        params = parents[0].params.copy()
-        # iterate over parameters of a single individual that
-        # is going to be made out of the two parents p1 and p2
-        params[self.crossover_mask] = parents[1].params[self.crossover_mask]
-        return params
+    def crossover_arrays(self, a1, a2, inverse=False):
+        """
+        can be used to crossover arrays, based on the random
+        crossover mask creation in the constructor.
+        
+        a1 is from parents[0], a2 is from parents[1]. inverse
+        can be used to inverse the crossover mask.
+
+        The crossovermask is by default False for parent 0,
+        True for parent 1.
+
+        """
+
+        ret = a1.copy()
+        mask = self.crossover_mask
+        if inverse:
+            a1[mask == False] = a2[mask == False]
+        else:
+            a1[mask] = a2[mask]
+        return ret
 
 
     def to_alpha_and_beta(self, param, lower, upper, sharpness):
@@ -142,16 +164,13 @@ class Model():
 
         self.is_mutated = True
 
+
     def set_fitness(self, fitness):
         """sets the fitness and calculates the derivative
         for each parameter compared to the parents"""
         self.fitness = fitness
         self.update_derivative()
             
-
-    # TODO this is a prototype
-    # - don't mean the parent derivatives, use them depending on which
-    #   parameter came from which parent in the crossover step.
 
     def update_derivative(self):
         """looks at parents and at itself and sees how much moving
@@ -174,26 +193,31 @@ class Model():
             # be even more uncertain given the mutated position.
             assert self.is_mutated == True
 
-            # the mean of the directions the parents were traveling to
-            parents_derivative = (self.parents[0].derivative + self.parents[1].derivative) / 2
 
-            # the mean fitness of the parents. sidenote: tends to be high since
-            # good parents are more likely to be sampled for crossover.
-            parents_fitness = (self.parents[0].fitness + self.parents[1].fitness) / 2
+            # take the fitness per param, depending on the parent that
+            # supplied that param during crossover.
+            parents_fitness = np.array([self.parents[0].fitness] * len(self.params))
+            parents_fitness[self.crossover_mask] = self.parents[1].fitness
 
-            # the observed derivative is just an array of [parent_fitness - child_fitness] * n_params
-            # use the mean of the fitness of the parents for that. 
-            delta_y = np.array([self.fitness - parents_fitness] * len(self.params))
+            # delta how much better the fitness is for this child, compared to the parents
+            delta_y = self.fitness - parents_fitness
 
-            # take the mean of the parameters of the parents and see how this child changed compared to that
-            delta_x = self.params - (self.parents[0].params + self.parents[1].params) / 2
+            # take the param of the parent based on the inversed crossover_mask,
+            # then substract itself. Inversed, because otherwise the delta would only
+            # be the mutation. By doing the inversion, the delta includes the delta
+            # from the crossover.
+            delta_x = self.params - self.crossover_arrays(self.parents[0].params, self.parents[1].params, True)
+
+            # this basically just aggregates the parents derivatives,
+            # used for the momentum term (and when delta_x is 0):
+            parents_derivative = self.get_derivative_prediction()
 
             # divide delta_y by delta_x to get the derivative
             # set those derivatives for which delta_x is 0 to the parents derivative,
             # since the individual didn't move on that dimension.
-            mask_not_null = (delta_x != 0)
-            new_derivative = parents_derivative
-            new_derivative[mask_not_null] = delta_y[mask_not_null] / delta_x[mask_not_null]
+            mask_delta_not_null = (delta_x != 0)
+            new_derivative = parents_derivative.copy()
+            new_derivative[mask_delta_not_null] = delta_y[mask_delta_not_null] / delta_x[mask_delta_not_null]
 
             # add momentum term to form the new_derivative
             new_derivative = parents_derivative * self.momentum + new_derivative
@@ -212,10 +236,8 @@ class Model():
 
 
     def get_derivative_prediction(self):
-        # returns the mean of the parents derivatives
-        # TODO don't mean, crossover it the EXACT same way as when
-        # the parameters were crossovered.
-        # Maybe the crossover function of the Model class can do both.
+        # crossovers the parents derivatives the same way
+        # as when the parameters were crossovered.
         if self.parents == None:
             return np.zeros(len(self.params))
-        return (self.parents[0].derivative + self.parents[1].derivative) / 2
+        return self.crossover_arrays(self.parents[0].derivative, self.parents[1].derivative)
