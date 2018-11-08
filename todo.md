@@ -2,6 +2,8 @@
 
 **todo with the highest priority is on the top**
 
+- random_state
+
 - create an example for discrete domains
 
 - divide the code into functions and stuff that handle some tasks individually

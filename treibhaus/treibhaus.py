@@ -21,7 +21,7 @@ __author__ = "Tobias B <proxima@hip70890b.de>"
 class Treibhaus():
     def __init__(self, model_generator, fitness_evaluator, population, generations,
                  params, random_seed=None, new_individuals=0, exploration_damping=10000,
-                 keepParents=0, dynamicExploration=1.1, workers=1, stopping_kriterion_gens=4,
+                 keep_parents=0, dynamic_exploration=1.1, workers=1, stopping_kriterion_gens=4,
                  stopping_kriterion_fitness=None, verbose=False, ignore_errors=False,
                  learning_rate=0.1, momentum=0.1, initial_population=[]):
         """
@@ -125,13 +125,13 @@ class Treibhaus():
             this is the sharpness of the distribution that is
             used to mutate. parameters of the distribution add up
             to exploration_damping
-        keepParents : float
+        keep_parents : float
             how many of the best parents to take into the next generation.
             float between 0 and 1
-        dynamicExploration : float
+        dynamic_exploration : float
             will make more exploration when no better performing
             individuals were found in a generation. Default: 1.1
-            Set to 1 for no dynamicExploration
+            Set to 1 for no dynamic_exploration
         workers : number
             How many processes will be spawned to train models in parallel.
             Default is 1, which means that the multiprocessing package will
@@ -224,7 +224,7 @@ class Treibhaus():
 
         self.fitness_evaluator = fitness_evaluator
         self.new_individuals = new_individuals
-        self.dynamicExploration = dynamicExploration
+        self.dynamic_exploration = dynamic_exploration
         self.stopping_kriterion_gens = stopping_kriterion_gens
         self.stopping_kriterion_fitness = stopping_kriterion_fitness
         self.verbose = verbose
@@ -234,7 +234,7 @@ class Treibhaus():
         self.exploration_damping = np.array(exploration_damping, float)
         # percent to number of parents that are taken into the next generation
         # always keep the very best one
-        self.keepParents = max(1, int(keepParents*population))
+        self.keep_parents = max(1, int(keep_parents*population))
         # parameter ranges
         self.paramsUpper = paramsUpper
         self.paramsLower = paramsLower
@@ -383,7 +383,7 @@ class Treibhaus():
 
         # make a copy of exploration_damping,
         # to keep the original one in self,
-        # as dynamicExploration will modify the
+        # as dynamic_exploration will modify the
         # damping.
         exploration_damping = self.exploration_damping
 
@@ -428,7 +428,7 @@ class Treibhaus():
                 # this is done the first time the train function is called,
                 # afterwards models is not [] anymore.
                 
-                num_random_models = population + self.keepParents - len(self.initial_population)
+                num_random_models = population + self.keep_parents - len(self.initial_population)
                 todoList = self.generate_initial_parameters(num_random_models)
                 todoList += self.initial_population
                 
@@ -446,22 +446,22 @@ class Treibhaus():
                 while len(todoList) < population:
                     
                     # select 2 random parents. good parents are more likely to be selected (choices function)
-                    # - don't select from new individuals with unknown quality (hence [0] * new_individuals)
-                    #   (those will be evaluated later, but not used to generate offspring)
-                    # - don't put too much weight on the best models, as it would prevent exploration of other minimas
+                    # - don't put too much weight on the best models, as
+                    #   it would prevent exploration of other minimas
                     # - don't select the same individual for parent1 and parent2
-                    # alternatively: remove bad individuals and select uniformly from those that are left
-                    weights = [0]*new_individualsInt + [x for x in range(1, population - new_individualsInt+1)]
+                    # - alternatively: remove bad individuals and select uniformly
+                    #   from those that are left (not (yet?) implemented)
+                    weights = [x for x in range(len(models))]
                     iP1 = 0
                     iP2 = 0
                     while iP1 == iP2:
-                        iP1 = choices(range(population), weights)[0]
-                        iP2 = choices(range(population), weights)[0]
+                        iP1 = choices(range(len(models)), weights)[0]
+                        iP2 = choices(range(len(models)), weights)[0]
                     p1 = models[iP1]
                     p2 = models[iP2]
 
                     newborn = Model(None, None, (p1, p2), learning_rate=self.learning_rate, momentum=self.momentum)
-                    uniformity = self.dynamicExploration**unsuccessful_generations - 1
+                    uniformity = self.dynamic_exploration**unsuccessful_generations
                     newborn.mutate(paramsLower, paramsUpper, paramsTypes, exploration_damping, uniformity)
 
                     # Set fitness to None, because that
@@ -509,26 +509,28 @@ class Treibhaus():
             # - models still contains the old (and already sorted) models from the previous generation
             # - models is empty at first, but the [...:] selector will not break. it will just return []
             # - childModels contains the unsorted models from the new generation
-            # - select keepParents of the best models from the previous generations (don't use [-keepParents:], because keepParents can be 0)
-            # - sort the whole thing (which has the size of keepParents + population) based on the fitness
-            # - now remove keepParents from it, so that the size is population again
-            # so after all having keepParents set to 25% of the population does not strictly mean that there are
+            # - select keep_parents of the best models from the previous generations (don't use [-keep_parents:], because keep_parents can be 0)
+            # - sort the whole thing (which has the size of keep_parents + population) based on the fitness
+            # - now remove keep_parents from it, so that the size is population again
+            # so after all having keep_parents set to 25% of the population does not strictly mean that there are
             # parents for the next generation that are from the old generation. They are not, if the worst model
             # of the new generation performed better than the best model of the last generation.
-            models = sorted(models[population-self.keepParents:]+childModels, key=lambda model: model.fitness)[self.keepParents:]
-
+            best_models = models[population - self.keep_parents:]
+            models = sorted(best_models + childModels, key=lambda model: model.fitness)[-population:]
+            # print(models[-1].fitness) # should become lower and lower (keep_parents is always minimum of 1)
+            
             # difference between models and history is, that
             # elements will not be removed from the history,
             # only added. add all the individuals to the history for nice plotting
             self.history += childModels
 
-            if self.dynamicExploration != 1:
+            if self.dynamic_exploration != 1:
                 self.exploration_damping 
 
             if not self.best is None and models[-1].fitness <= self.best.fitness:
                 # The generation was unsuccessful. Modify exploration_damping,
                 # to get out of local minima:
-                exploration_damping /= self.dynamicExploration
+                exploration_damping /= self.dynamic_exploration
                 unsuccessful_generations += 1
             else:
                 # new best performing model found, overwrite old one

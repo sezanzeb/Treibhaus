@@ -1,9 +1,11 @@
 import numpy as np
 from random import randint
+from random import seed
 import sys
 
 class Model():
-    def __init__(self, params=None, fitness=None, parents=None, learning_rate=0.1, momentum=0.1):
+    def __init__(self, params=None, fitness=None, parents=None,
+                 learning_rate=0.1, momentum=0.1, random_seed=None):
         """
         One single model of the total population.
 
@@ -96,7 +98,6 @@ class Model():
         that can be formed using those 2 parameters is always the
         param parameter, translated to a space between 0 and 1.
         """
-
         # the current position is also the mean of the distribution
 
         # NO TODO it has to be the median, so that
@@ -128,11 +129,14 @@ class Model():
 
 
     def mutate(self, paramsLower, paramsUpper, paramsTypes, exploration_damping, uniformity):
-        """The larger uniformity is, the more alpha and beta create an uniform distribution for mutation""" 
+        """The larger uniformity is, the more alpha and beta create
+        an uniform distribution for mutation""" 
 
         derivative_prediction = self.get_derivative_prediction()
 
-        for iParam in range(len(self.params)):
+        num_params = len(self.params)
+
+        for iParam in range(num_params):
 
             lower = paramsLower[iParam]
             upper = paramsUpper[iParam]
@@ -141,12 +145,14 @@ class Model():
             # mutate
 
             # parameters of the beta distribution
-            sharpness = exploration_damping[iParam]
+            # large uniformity: small sharpness -> high variance for sampling distribution
+            # small uniformity: high sharpness -> very likely to select values from a narrow range
+            sharpness = exploration_damping[iParam] / uniformity
             alpha, beta = self.to_alpha_and_beta(param, lower, upper, sharpness)
-            # the more unsuccessful generations, the more alpha and beta should be like [1, 1]
-            # to form an uniform distribution.
-            alpha = (1 * uniformity + alpha) / (uniformity + 1)
-            beta  = (1 * uniformity + beta ) / (uniformity + 1)
+
+            # make sure the beta distribution does not stack around the constraints:
+            alpha = max(1, alpha)
+            beta = max(1, beta)
 
             # now take a sample ] 1, 0 [ from beta that will be the new parameter
             # beta is good for taking random samples in a constrained space
@@ -212,10 +218,12 @@ class Model():
             # take the fitness per param, depending on the parent that
             # supplied that param during crossover.
             parents_fitness = np.zeros(len(self.params))
+            # overwrite all the elements ([:]) with the single fitness float
             parents_fitness[:] = self.parents[0].fitness
             parents_fitness[self.crossover_mask] = self.parents[1].fitness
 
             # delta how much better the fitness is for this child, compared to the parents
+            # (float - np.array = - np.array + float = another np.array)
             delta_y = self.fitness - parents_fitness
 
             # take the param of the parent based on the inversed crossover_mask,

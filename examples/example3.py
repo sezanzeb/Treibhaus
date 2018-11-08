@@ -52,7 +52,9 @@ optimizer = Treibhaus(None, test,
                     stopping_kriterion_gens=None,
                     stopping_kriterion_fitness=-0.005,
                     verbose=False,
-                    learning_rate=0.1)
+                    learning_rate=0.1,
+                    dynamic_exploration=0.9,
+                    random_seed=0)
 
 # ----------------------------------- results -----------------------------------
 

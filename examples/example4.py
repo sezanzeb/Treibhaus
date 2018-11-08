@@ -18,8 +18,8 @@ class Model():
         val = ((self.x1 + self.x2)/2)
         # create a pit to fall in around the maximum fitness
         # >:)
-        if self.x1 > 1 and self.x2 > 1:
-            val = 0
+        # if self.x1 > 1 and self.x2 > 1:
+        #     val = 0
         return val
 
 # how often to repeat each benchmark in order to
@@ -40,7 +40,8 @@ treibhaus_params = {
     # mutate towards the middle of the parameter search space...
     'params': [[0, 2, float]] * 2,
     'stopping_kriterion_fitness': 0.95,
-    'stopping_kriterion_gens': None
+    'stopping_kriterion_gens': None,
+    'dynamic_exploration': 1.1
 }
 
 
@@ -64,7 +65,7 @@ benchmark = 0
 for i in range(rounds):
     optimizer = Treibhaus(**treibhaus_params,
                         initial_population=create_initial_population(),
-                        learning_rate=0.1,
+                        learning_rate=0.01,
                         momentum=0)
     benchmark += optimizer.generations_until_stopped
 print('- benchmark with gradient:', benchmark)
@@ -73,7 +74,7 @@ benchmark = 0
 for i in range(rounds):
     optimizer = Treibhaus(**treibhaus_params,
                         initial_population=create_initial_population(),
-                        learning_rate=0.1,
+                        learning_rate=0.01,
                         momentum=1)
     benchmark += optimizer.generations_until_stopped
 print('- benchmark with gradient and momentum:', benchmark)
