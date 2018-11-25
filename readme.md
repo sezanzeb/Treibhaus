@@ -29,7 +29,8 @@ New examples and benchmarks are also much appreciated, as well as new ideas and 
 
 To goal is to have something that works out of the box for **easy** problems 
 with a *very minimal coding effort*. Other than that, it's mostly for the sake
-of fun, implementing new funky features and ideas.
+of fun, implementing new funky features and ideas, probably not doing much more
+than a random search currently.
 
 ## Installation
 
